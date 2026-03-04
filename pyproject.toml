@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "multi-agent-ensemble-for-search-through-reinforcement-optimization-maestro"
+version = "0.1.0"
+description = ""
+authors = ["Hana Zouari <zouari01@ads.uni-passau.de>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.14"
+sentence-transformers = "*"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
