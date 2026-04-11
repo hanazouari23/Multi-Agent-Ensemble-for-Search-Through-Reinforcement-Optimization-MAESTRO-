@@ -30,7 +30,7 @@ class ReformulationAgent(AgentBase):
         
         # 1. Call LLM to reformulate (with timing)
         start_time = time.time()
-        rewritten_query, api_cost = self._call_llm(original_query)
+        rewritten_query = self._call_llm(original_query)
         elapsed_time = time.time() - start_time
         
         # 2. Re-embed the NEW query (critical for state update!)
@@ -46,8 +46,8 @@ class ReformulationAgent(AgentBase):
 
             'delta_ndcg': 0.05 * sim,      # Better query → better NDCG
             'delta_recall': 0.02 * sim,
-            'delta_time': elapsed_time,    # Actual LLM latency (seconds)
-            'delta_cost': api_cost,        # Actual API cost (in dollars)
+            'delta_time': elapsed_time,    #LLM latency (seconds)
+            'delta_cost': 0.8,        #API cost 
             'satisfaction': query_features['prior_cov'] * sim,
             'new_query_text': rewritten_query,    # Pass back for logging
             'new_embedding': new_embedding,       # Update query_features!
@@ -67,24 +67,25 @@ class ReformulationAgent(AgentBase):
         if not content:
             raise RuntimeError("No choices returned")  
         # Get token counts from usage (this DOES work with OpenRouter)
-        prompt_tokens = response.usage.prompt_tokens
-        completion_tokens = response.usage.completion_tokens
+        # prompt_tokens = response.usage.prompt_tokens
+        # completion_tokens = response.usage.completion_tokens
     
         # For OpenRouter: query their pricing endpoint or use local cache
         # Option 1: Use cached pricing (requires initial fetch)
         # Option 2: Hit /billing/usage endpoint after the fact
-        estimated_cost = self._estimate_cost(prompt_tokens, completion_tokens)
+        # estimated_cost = self._estimate_cost(prompt_tokens, completion_tokens)
 
-        return content, estimated_cost
+        # return content, estimated_cost
+        return content
     
-    def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
-        """Get pricing from OpenRouter or use cached values"""
-        # Check OpenRouter's pricing API or store locally
-        # Example: deepseek-v3.2 might be $0.27/$0.81 per 1M tokens (example rates)
-        DEEPSEEK_PRICING = {"prompt": 0.247, "completion": 0.472}  # $ per 1M tokens
+    # def _estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+    #     """Get pricing from OpenRouter or use cached values"""
+    #     # Check OpenRouter's pricing API or store locally
+    #     # Example: deepseek-v3.2 might be $0.27/$0.81 per 1M tokens (example rates)
+    #     DEEPSEEK_PRICING = {"prompt": 0.247, "completion": 0.472}  # $ per 1M tokens
 
-        cost = (prompt_tokens * DEEPSEEK_PRICING["prompt"] + 
-                completion_tokens * DEEPSEEK_PRICING["completion"]) / 1_000_000
-        return cost
+    #     cost = (prompt_tokens * DEEPSEEK_PRICING["prompt"] + 
+    #             completion_tokens * DEEPSEEK_PRICING["completion"]) / 1_000_000
+    #     return cost
 
 
