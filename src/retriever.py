@@ -85,6 +85,24 @@ class Retriever:
             return []
 
 
+def create_retriever_callable(retriever_instance: Retriever) -> callable:
+    """
+    Create a callable that matches the Simulation's expected retriever interface.
+    
+    Args:
+        retriever_instance: An instance of the Retriever class
+        
+    Returns:
+        A callable that takes a query string and returns List[Tuple[str, float]]
+        where each tuple is (doc_id, score)
+    """
+    def retriever_func(query: str) -> List[tuple[str, float]]:
+        results = retriever_instance.retrieve(query)
+        return [(doc['id'], doc['score']) for doc in results]
+    
+    return retriever_func
+
+
 # Example usage
 if __name__ == "__main__":
     retriever = Retriever()
@@ -98,3 +116,10 @@ if __name__ == "__main__":
         print(f"\n{i}. Score: {doc['score']:.4f}")
         print(f"   ID: {doc['id']}")
         print(f"   Text: {doc['text'][:100]}...")
+    
+    # Test the callable wrapper
+    retriever_func = create_retriever_callable(retriever)
+    tuples = retriever_func(query)
+    print(f"\nCallable returned {len(tuples)} tuples:")
+    for i, (doc_id, score) in enumerate(tuples[:3]):
+        print(f"  {i+1}. {doc_id}: {score:.4f}")

@@ -8,41 +8,60 @@ class RerankingAgent(AgentBase):
     """
     A re-ranking agent that uses a cross-encoder to re-score documents.
     """
-    def __init__(self, agent_id: int, embed_model, model_name: str = 'cross-encoder/ms-marco-MiniLM-L-6-v2'):
-        super().__init__(agent_id, embed_model)
+    def __init__(self, embed_model, model_name: str = 'cross-encoder/ms-marco-MiniLM-L-6-v2'):
+        super().__init__(agent_id=1, embed_model=embed_model)
         self.model = CrossEncoder(model_name)
 
-    def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, float]:
+    def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Rerank documents using cross-encoder.
+        
+        Args:
+            query_features: Dict containing:
+                - 'query_text': str - the query
+                - 'doc_ids': List[str] - current document IDs
+                - 'doc_scores': np.ndarray - current document scores
+                - 'corpus': Dict[str, str] - document text corpus
+                - 'top_k_rerank': int - how many top documents to rerank
+                
+        Returns:
+            Dict with:
+                - 'new_doc_ids': List[str] - reranked document IDs
+                - 'new_doc_scores': np.ndarray - reranked document scores
+                - 'elapsed_time': float - time taken for reranking
+        """
         query = query_features['query_text']
-        documents = query_features.get('documents', [])
+        doc_ids = query_features['doc_ids']
+        doc_scores = query_features['doc_scores']
+        corpus = query_features['corpus']
+        top_k = query_features.get('top_k_rerank', min(10, len(doc_ids)))
         
-        if not documents:
-            return {
-                'delta_ndcg': 0.0,
-                'delta_recall': 0.0,
-                'delta_time': 0.0,
-                'delta_cost': 0.0,
-            }
+        # Limit reranking to top_k documents
+        rerank_ids = doc_ids[:top_k]
+        rerank_scores = doc_scores[:top_k]
         
-        # Rerank the documents
+        # Create query-document pairs
+        pairs = [(query, corpus.get(doc_id, "")) for doc_id in rerank_ids]
+        
+        # Rerank with cross-encoder
         start_time = time.time()
-        pairs = [[query, doc['text']] for doc in documents]
-        scores = self.model.predict(pairs)
+        ce_scores = self.model.predict(pairs, show_progress_bar=False)
         elapsed_time = time.time() - start_time
         
-        # Add scores
-        for doc, score in zip(documents, scores):
-            doc['rerank_score'] = float(score)
+        # Sort by cross-encoder scores (descending)
+        order = np.argsort(ce_scores)[::-1]
+        reranked_ids = [rerank_ids[i] for i in order]
+        reranked_scores = np.asarray(ce_scores)[order].astype(np.float32)
         
-        # Sort by score descending
-        documents.sort(key=lambda x: x['rerank_score'], reverse=True)
+        # Combine reranked top_k with remaining documents
+        remaining_ids = doc_ids[top_k:]
+        remaining_scores = doc_scores[top_k:]
         
-        # Compute effects: average rerank score as proxy for improvement
-        avg_score = np.mean(scores)
+        new_doc_ids = reranked_ids + remaining_ids
+        new_doc_scores = np.concatenate([reranked_scores, remaining_scores])
         
         return {
-            'delta_ndcg': 0.1 * avg_score,  # Mock improvement based on score
-            'delta_recall': 0.05 * avg_score,
-            'delta_time': elapsed_time,
-            'delta_cost': 0.1,  # Some cost for reranking
+            'new_doc_ids': new_doc_ids,
+            'new_doc_scores': new_doc_scores,
+            'elapsed_time': elapsed_time,
         }

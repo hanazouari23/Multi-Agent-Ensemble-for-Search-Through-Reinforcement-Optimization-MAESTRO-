@@ -1,10 +1,11 @@
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
-from sympy import content
 from .agents import AgentBase
 import os
 import numpy as np
 import time
+from typing import Dict, Any, List, Tuple
+
 # system message sent to the LLM when reformulating queries
 SYSTEM_PROMPT = (
     "You are a query rewriting assistant. "
@@ -24,33 +25,46 @@ class ReformulationAgent(AgentBase):
             }
         )
     
-    def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, float]:
-        original_query = query_features['query_text']  # add this to features
-        orig_embedding = query_features['embedding']
+    def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Reformulate the query and retrieve new documents.
         
-        # 1. Call LLM to reformulate (with timing)
+        Args:
+            query_features: Dict containing:
+                - 'query_text': str - the original query
+                - 'retriever': callable - function to retrieve documents
+                
+        Returns:
+            Dict with:
+                - 'new_query_text': str - reformulated query
+                - 'new_doc_ids': List[str] - new document IDs
+                - 'new_doc_scores': np.ndarray - new document scores
+                - 'elapsed_time': float - time taken for reformulation + retrieval
+        """
+        original_query = query_features['query_text']
+        retriever = query_features['retriever']
+        
+        # 1. Reformulate query with LLM
         start_time = time.time()
-        rewritten_query = self._call_llm(original_query)
-        elapsed_time = time.time() - start_time
+        reformulated_query = self._call_llm(original_query)
+        reformulation_time = time.time() - start_time
         
-        # 2. Re-embed the NEW query (critical for state update!)
-        new_embedding = self.embed_model.encode(rewritten_query)
+        # 2. Retrieve new documents with reformulated query
+        retrieval_start = time.time()
+        raw_results = retriever(reformulated_query)
+        retrieval_time = time.time() - retrieval_start
         
-        # 3. Simulate effects (replace with real eval)
-        # For now: mock based on embedding similarity + priors
-        sim = np.dot(orig_embedding[:512], new_embedding[:512]) / (
-            np.linalg.norm(orig_embedding[:512]) * np.linalg.norm(new_embedding[:512])
-        )  # cosine sim first 512 dims
+        # 3. Extract doc_ids and scores
+        new_doc_ids = [doc_id for doc_id, _ in raw_results]
+        new_doc_scores = np.array([score for _, score in raw_results], dtype=np.float32)
+        
+        total_elapsed = reformulation_time + retrieval_time
         
         return {
-
-            'delta_ndcg': 0.05 * sim,      # Better query → better NDCG
-            'delta_recall': 0.02 * sim,
-            'delta_time': elapsed_time,    #LLM latency (seconds)
-            'delta_cost': 0.8,        #API cost 
-            'satisfaction': query_features['prior_cov'] * sim,
-            'new_query_text': rewritten_query,    # Pass back for logging
-            'new_embedding': new_embedding,       # Update query_features!
+            'new_query_text': reformulated_query,
+            'new_doc_ids': new_doc_ids,
+            'new_doc_scores': new_doc_scores,
+            'elapsed_time': total_elapsed,
         }
     
     def _call_llm(self, query: str) -> str:
