@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 import numpy as np
 import time
 from sentence_transformers import SentenceTransformer
-from .agents import AgentBase
+from ..core.agents import AgentBase
 
 
 class ClickPriorAgent(AgentBase):

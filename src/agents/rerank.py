@@ -1,6 +1,6 @@
 from sentence_transformers import CrossEncoder
 from typing import List, Dict, Any
-from .agents import AgentBase
+from ..core.agents import AgentBase
 import numpy as np
 import time
 

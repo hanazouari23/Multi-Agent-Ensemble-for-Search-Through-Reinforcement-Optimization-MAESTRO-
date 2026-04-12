@@ -30,21 +30,17 @@ load_env_file()
 # Support both package and direct execution
 try:
     from .simulation import Simulation, SimConfig
-    from .agents import AgentBase
-    from .Reformulate import ReformulationAgent
-    from .rerank import RerankingAgent
-    from .click_reweight import ClickPriorAgent
-    from .retriever import Retriever, create_retriever_callable
-    from .orcas_loader import load_orcas_tsv_sample
+    from .core.agents import AgentBase
+    from .agents import ReformulationAgent, RerankingAgent, ClickPriorAgent
+    from .utils.retriever import Retriever, create_retriever_callable
+    from .utils.orcas_loader import load_orcas_tsv_sample
 except ImportError:
     # Fallback for direct script execution
     from simulation import Simulation, SimConfig
-    from agents import AgentBase
-    from Reformulate import ReformulationAgent
-    from rerank import RerankingAgent
-    from click_reweight import ClickPriorAgent
-    from retriever import Retriever, create_retriever_callable
-    from orcas_loader import load_orcas_tsv_sample
+    from core.agents import AgentBase
+    from agents import ReformulationAgent, RerankingAgent, ClickPriorAgent
+    from utils.retriever import Retriever, create_retriever_callable
+    from utils.orcas_loader import load_orcas_tsv_sample
 
 def load_orcas_index(filepath: str) -> dict:
     """Load ORCAS click data from JSON file."""

@@ -101,25 +101,3 @@ def create_retriever_callable(retriever_instance: Retriever) -> callable:
         return [(doc['id'], doc['score']) for doc in results]
     
     return retriever_func
-
-
-# Example usage
-if __name__ == "__main__":
-    retriever = Retriever()
-    
-    # Test query
-    query = "Restaurants in Passau"
-    results = retriever.retrieve(query)
-    
-    print(f"Retrieved {len(results)} documents for query: '{query}'")
-    for i, doc in enumerate(results[:5], 1):  # Print top 5
-        print(f"\n{i}. Score: {doc['score']:.4f}")
-        print(f"   ID: {doc['id']}")
-        print(f"   Text: {doc['text'][:100]}...")
-    
-    # Test the callable wrapper
-    retriever_func = create_retriever_callable(retriever)
-    tuples = retriever_func(query)
-    print(f"\nCallable returned {len(tuples)} tuples:")
-    for i, (doc_id, score) in enumerate(tuples[:3]):
-        print(f"  {i+1}. {doc_id}: {score:.4f}")
