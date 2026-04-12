@@ -6,12 +6,11 @@ A modular framework for multi-agent retrieval optimization using reinforcement l
 
 __version__ = "0.1.0"
 
-from .agents import AgentBase
+from .core.agents import AgentBase
 from .simulation import Simulation, SimConfig, Transition
-from .Reformulate import ReformulationAgent
-from .rerank import RerankingAgent
-from .click_reweight import ClickPriorAgent
-from .retriever import Retriever, create_retriever_callable
+from .agents import ReformulationAgent, RerankingAgent, ClickPriorAgent
+from .utils.retriever import Retriever, create_retriever_callable
+from .utils.trajectory_collector import TrajectoryCollector
 
 __all__ = [
     "AgentBase",
@@ -23,4 +22,5 @@ __all__ = [
     "ClickPriorAgent",
     "Retriever",
     "create_retriever_callable",
+    "TrajectoryCollector",
 ]

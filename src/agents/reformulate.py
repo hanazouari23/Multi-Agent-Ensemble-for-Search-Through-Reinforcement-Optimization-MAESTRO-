@@ -20,7 +20,7 @@ class ReformulationAgent(AgentBase):
             base_url="https://openrouter.ai/api/v1",
             api_key=os.getenv("API_KEY"),
             default_headers={
-                "HTTP-Referer": "your-notebook-url",
+                "HTTP-Referer": "MAESTRO-Query-Reformulator",
                 "X-Title": "Query Reformulator",
             }
         )
@@ -69,7 +69,7 @@ class ReformulationAgent(AgentBase):
     
     def _call_llm(self, query: str) -> str:
         response = self.client.chat.completions.create(
-            model="deepseek/deepseek-v3.2",
+            model="anthropic/claude-sonnet-4.6",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},

@@ -10,7 +10,7 @@ import numpy as np
 from scipy.special import softmax
 from scipy.stats import entropy as scipy_entropy
 
-from .agents import AgentBase
+from .core.agents import AgentBase
 
 logger = logging.getLogger(__name__)
 
@@ -61,25 +61,25 @@ class SimConfig:
     elapsed_time_norm: float = 10_000.0
 
     # State dimensions
-    query_emb_dim: int  = 768
+    query_emb_dim: int  = 384  # all-MiniLM-L6-v2 returns 384-d embeddings
     # ┌─ Layout ──────────────────────────────────────────────────────────────┐
     # │ [0]       query_length     1                                          │
-    # │ [1:769]   query_embedding  768                                        │
-    # │ [769]     score_spread     1                                          │
-    # │ [770]     score_entropy    1                                          │
-    # │ [771:774] agents_used      3                                          │
-    # │ [774]     step             1                                          │
-    # │ [775]     ndcg_change      1                                          │
-    # │ [776]     recall_change    1                                          │
-    # │ [777]     elapsed_time     1  (normalised)                            │
-    # │ [778]     cost             1  (cumulative)                            │
-    # │ [779]     prior_coverage   1                                          │
-    # │ [780]     max_prior        1                                          │
-    # │ [781]     mean_prior       1                                          │
-    # │ [782:786] valid_actions    4                                          │
-    # │ Total = 1+768+1+1+3+1+1+1+1+1+1+1+1+4 = 786                        │
+    # │ [1:385]   query_embedding  384                                        │
+    # │ [385]     score_spread     1                                          │
+    # │ [386]     score_entropy    1                                          │
+    # │ [387:390] agents_used      3                                          │
+    # │ [390]     step             1                                          │
+    # │ [391]     ndcg_change      1                                          │
+    # │ [392]     recall_change    1                                          │
+    # │ [393]     elapsed_time     1  (normalised)                            │
+    # │ [394]     cost             1  (cumulative)                            │
+    # │ [395]     prior_coverage   1                                          │
+    # │ [396]     max_prior        1                                          │
+    # │ [397]     mean_prior       1                                          │
+    # │ [398:402] valid_actions    4                                          │
+    # │ Total = 1+384+1+1+3+1+1+1+1+1+1+1+1+4 = 402                        │
     # └──────────────────────────────────────────────────────────────────────┘
-    state_dim: int = 786
+    state_dim: int = 402
 
 
 # ── Transition data structure ─────────────────────────────────────────────────
@@ -122,8 +122,6 @@ class Simulation:
                     The three agents: [ReformulationAgent, RerankingAgent, ClickPriorAgent]
     orcas_index   : Dict[str, List[str]]
                     ORCAS click-log: query → [clicked_doc_id, …].
-    corpus        : Dict[str, str]
-                    Full text corpus: doc_id → document text.
     config        : SimConfig  (defaults applied if None)
     """
 
@@ -133,14 +131,12 @@ class Simulation:
         retriever:    Callable[[str], List[Tuple[str, float]]],
         agents:       List[AgentBase],
         orcas_index:  Dict[str, List[str]],
-        corpus:       Dict[str, str],
         config:       Optional[SimConfig] = None,
     ) -> None:
         self.encoder       = encoder
         self.retriever     = retriever
         self.agents        = agents  # [qr_agent, rr_agent, cp_agent]
         self.orcas_index   = orcas_index
-        self.corpus        = corpus
         self.cfg           = config or SimConfig()
 
     # ── Metrics (MDP-level evaluation) ────────────────────────────────────────

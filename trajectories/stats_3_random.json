@@ -1,0 +1,22 @@
+{
+  "total_trajectories": 3,
+  "total_transitions": 5,
+  "avg_trajectory_length": 1.6666666666666667,
+  "min_trajectory_length": 1,
+  "max_trajectory_length": 2,
+  "reward_mean": 0.07535827746256038,
+  "reward_std": 0.0922946638391752,
+  "reward_min": 0.0,
+  "reward_max": 0.18839569365640096,
+  "action_distribution": {
+    "0": 0,
+    "1": 2,
+    "2": 0,
+    "3": 3
+  },
+  "policy_distribution": {
+    "random": 4
+  },
+  "unique_queries": 3,
+  "total_collection_time_s": 1.1255104001611471
+}

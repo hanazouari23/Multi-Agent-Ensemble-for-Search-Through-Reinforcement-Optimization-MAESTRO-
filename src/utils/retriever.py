@@ -1,5 +1,6 @@
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+import numpy as np
 import os
 
 class Retriever:
@@ -93,11 +94,16 @@ def create_retriever_callable(retriever_instance: Retriever) -> callable:
         retriever_instance: An instance of the Retriever class
         
     Returns:
-        A callable that takes a query string and returns List[Tuple[str, float]]
-        where each tuple is (doc_id, score)
+        A callable that takes a query string and returns (doc_ids, scores, corpus_data) where:
+        - doc_ids: List of document IDs
+        - scores: np.ndarray of BM25 scores
+        - corpus_data: Dict mapping doc_id -> text
     """
-    def retriever_func(query: str) -> List[tuple[str, float]]:
-        results = retriever_instance.retrieve(query)
-        return [(doc['id'], doc['score']) for doc in results]
+    def retriever_func(query: str, top_k: int = 50) -> Tuple[List[str], np.ndarray, Dict[str, str]]:
+        results = retriever_instance.retrieve(query, top_k=top_k)
+        doc_ids = [doc['id'] for doc in results]
+        scores = np.array([doc['score'] for doc in results], dtype=np.float32)
+        corpus_data = {doc['id']: doc['text'] for doc in results}
+        return doc_ids, scores, corpus_data
     
     return retriever_func

@@ -4,7 +4,9 @@ version = "0.1.0"
 description = ""
 authors = ["Hana Zouari <zouari01@ads.uni-passau.de>"]
 readme = "README.md"
-package-mode = false
+packages = [
+    { include = "src" }
+]
 
 [tool.poetry.scripts]
 maestro = "src.main:main"
@@ -21,3 +23,7 @@ scipy = "^1.13.0"
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[dependency-groups]
+dev = [
+    "ipykernel (>=7.2.0,<8.0.0)"
+]

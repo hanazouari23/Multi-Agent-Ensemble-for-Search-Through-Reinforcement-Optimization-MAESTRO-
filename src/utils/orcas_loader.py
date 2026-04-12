@@ -13,7 +13,9 @@ def load_orcas_tsv(filepath: str) -> Dict[str, List[str]]:
     Load ORCAS TSV file into dict format expected by ClickPriorAgent.
     
     TSV format (tab-separated):
-        query_id, query_text, doc_id, click_signal, ...
+        query_id, query_text, doc_id, url
+    
+    Note: Any doc appearing in the file is considered clicked (binary signal).
     
     Returns:
         Dict[query_text] → List[doc_ids_with_clicks]
@@ -21,36 +23,33 @@ def load_orcas_tsv(filepath: str) -> Dict[str, List[str]]:
     Example:
         >>> orcas = load_orcas_tsv("data/orcas.tsv")
         >>> orcas["restaurants in passau"]
-        ['doc1', 'doc3', 'doc5']
+        ['D1265400', 'D3438005', 'D889000']
     """
     orcas_index: Dict[str, List[str]] = {}
     
     with open(filepath, 'r', encoding='utf-8') as f:
-        for i, line in enumerate(f):
-            if i == 0:
-                # Skip header if present
-                if line.startswith("query") or line.startswith("#"):
-                    continue
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
             
-            parts = line.strip().split('\t')
+            parts = line.split('\t')
             if len(parts) < 3:
                 continue
             
-            # Assuming format: query_id, query_text, doc_id, click_signal, ...
+            # Format: query_id, query_text, doc_id, url (url is optional)
             query_text = parts[1].lower().strip()
             doc_id = parts[2].strip()
             
-            # Only include if there's a click signal (non-zero)
-            if len(parts) > 3 and parts[3].strip():
-                try:
-                    click_signal = float(parts[3])
-                    if click_signal > 0:
-                        if query_text not in orcas_index:
-                            orcas_index[query_text] = []
-                        if doc_id not in orcas_index[query_text]:
-                            orcas_index[query_text].append(doc_id)
-                except (ValueError, IndexError):
-                    pass
+            # Skip empty queries or docs
+            if not query_text or not doc_id:
+                continue
+            
+            # Add to index (presence in file means clicked)
+            if query_text not in orcas_index:
+                orcas_index[query_text] = []
+            if doc_id not in orcas_index[query_text]:
+                orcas_index[query_text].append(doc_id)
     
     return orcas_index
 
@@ -69,36 +68,37 @@ def load_orcas_tsv_sample(filepath: str, max_queries: int = 1000) -> Dict[str, L
     Returns
     -------
     Dict[str, List[str]]
-        Sampled ORCAS index
+        Sampled ORCAS index: query_text → [doc_ids]
     """
     orcas_index: Dict[str, List[str]] = {}
     queries_seen = set()
     
     with open(filepath, 'r', encoding='utf-8') as f:
-        for i, line in enumerate(f):
+        for line in f:
             if len(queries_seen) >= max_queries:
                 break
             
-            if i == 0 and (line.startswith("query") or line.startswith("#")):
+            line = line.strip()
+            if not line:
                 continue
             
-            parts = line.strip().split('\t')
+            parts = line.split('\t')
             if len(parts) < 3:
                 continue
             
+            # Format: query_id, query_text, doc_id, url
             query_text = parts[1].lower().strip()
             doc_id = parts[2].strip()
             
-            if len(parts) > 3 and parts[3].strip():
-                try:
-                    click_signal = float(parts[3])
-                    if click_signal > 0:
-                        queries_seen.add(query_text)
-                        if query_text not in orcas_index:
-                            orcas_index[query_text] = []
-                        if doc_id not in orcas_index[query_text]:
-                            orcas_index[query_text].append(doc_id)
-                except (ValueError, IndexError):
-                    pass
+            # Skip empty queries or docs
+            if not query_text or not doc_id:
+                continue
+            
+            # Add to index
+            queries_seen.add(query_text)
+            if query_text not in orcas_index:
+                orcas_index[query_text] = []
+            if doc_id not in orcas_index[query_text]:
+                orcas_index[query_text].append(doc_id)
     
     return orcas_index
