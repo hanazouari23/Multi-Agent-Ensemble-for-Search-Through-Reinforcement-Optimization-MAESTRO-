@@ -48,12 +48,10 @@ class SimConfig:
     top_k_rerank: int   = 50
     ndcg_k:       int   = 10
     recall_k:     int   = 100
-    sat_k:        int   = 10   # top-k window for satisfaction DCG
 
     # Reward weights:   r = α·ΔNDCG + β·ΔRecall + ζ·Δsat − γ·cost − δ·step
     reward_alpha: float = 2.0   # ΔNDCG@10 weight
     reward_beta:  float = 0.5   # ΔRecall@100 weight
-    reward_zeta:  float = 0.5   # Δsatisfaction (click-DCG) weight
     reward_gamma: float = 1.0   # cost penalty weight
     reward_delta: float = 0.05  # per non-terminal step penalty
 
@@ -72,14 +70,11 @@ class SimConfig:
     # │ [391]     ndcg_change      1                                          │
     # │ [392]     recall_change    1                                          │
     # │ [393]     elapsed_time     1  (normalised)                            │
-    # │ [394]     cost             1  (cumulative)                            │
-    # │ [395]     prior_coverage   1                                          │
-    # │ [396]     max_prior        1                                          │
-    # │ [397]     mean_prior       1                                          │
-    # │ [398:402] valid_actions    4                                          │
+    # │ [394]     cost             1  (cumulative)                            │                                         │
+    # │ [395:399] valid_actions    4                                          │
     # │ Total = 1+384+1+1+3+1+1+1+1+1+1+1+1+4 = 402                        │
     # └──────────────────────────────────────────────────────────────────────┘
-    state_dim: int = 402
+    state_dim: int = 399
 
 
 # ── Transition data structure ─────────────────────────────────────────────────
@@ -119,9 +114,8 @@ class Simulation:
     retriever     : Callable[[str], List[Tuple[str, float]]]
                     Base retriever: query → [(doc_id, score), …].
     agents        : List[AgentBase]
-                    The three agents: [ReformulationAgent, RerankingAgent, ClickPriorAgent]
-    orcas_index   : Dict[str, List[str]]
-                    ORCAS click-log: query → [clicked_doc_id, …].
+                    The three agents: [ReformulationAgent, RerankingAgent]
+   
     config        : SimConfig  (defaults applied if None)
     """
 
@@ -130,13 +124,11 @@ class Simulation:
         encoder,
         retriever:    Callable[[str], List[Tuple[str, float]]],
         agents:       List[AgentBase],
-        orcas_index:  Dict[str, List[str]],
         config:       Optional[SimConfig] = None,
     ) -> None:
         self.encoder       = encoder
         self.retriever     = retriever
         self.agents        = agents  # [qr_agent, rr_agent, cp_agent]
-        self.orcas_index   = orcas_index
         self.cfg           = config or SimConfig()
 
     # ── Metrics (MDP-level evaluation) ────────────────────────────────────────
@@ -209,74 +201,7 @@ class Simulation:
             return 0.0
         retrieved = set(ranked_doc_ids[:k])
         return len(retrieved & relevant) / len(relevant)
-    
-    @staticmethod
-    def compute_click_satisfaction(prior_scores: np.ndarray, k: int) -> float:
-        """
-        DCG-style click-weighted satisfaction proxy (from ORCAS signals).
-
-        Since standard datasets lack user satisfaction labels, satisfaction is
-        approximated from ORCAS click logs as a click-DCG over the final top-k:
-
-            sat(q, top_k) = Σ_{d at rank i}  prior(q, d) / log2(i + 1)
-
-        where prior(q, d) is the click signal for document d given query q.
-        Summing positional click gains rewards putting clicked documents early.
-
-        Parameters
-        ----------
-        prior_scores : array of click-prior values aligned with ranked doc_ids
-        k            : top-k window (sat_k from SimConfig)
-
-        Returns
-        -------
-        float
-            click-DCG satisfaction score (≥ 0, not normalised)
-        """
-        top = np.asarray(prior_scores[:k], dtype=float)
-        if top.size == 0:
-            return 0.0
-        positions = np.arange(2, top.size + 2)   # log2(rank + 1), rank starts at 1
-        return float(np.sum(top / np.log2(positions)))
-
-    # ── Prior helpers ─────────────────────────────────────────────────────────
-    def _get_prior_scores(self, query: str, doc_ids: List[str]) -> np.ndarray:
-        """
-        Return per-document click-prior scores aligned with doc_ids.
-
-        Currently uses binary ORCAS signals: prior(q,d) = 1.0 if d was
-        clicked for q in the ORCAS log, else 0.0.  Replace with normalised
-        click-frequency counts if richer ORCAS data is available.
-        """
-        clicked = set(self.orcas_index.get(query, []))
-        if not clicked:
-            clicked = set(self.orcas_index.get(query.lower().strip(), []))
-        return np.array([1.0 if d in clicked else 0.0 for d in doc_ids],
-                        dtype=np.float32)
-
-    def _prior_features(
-        self,
-        query:    str,
-        doc_ids:  List[str],
-        top_k:    int = 50,
-    ) -> Tuple[float, float, float]:
-        """
-        Compute three prior-coverage features over top_k of the ranked list.
-
-        Returns
-        -------
-        prior_coverage : fraction of top-k docs that have ≥1 ORCAS click
-        max_prior      : maximum click-prior score in top-k
-        mean_prior     : mean click-prior score in top-k
-        """
-        priors = self._get_prior_scores(query, doc_ids)[:top_k]
-        if priors.size == 0:
-            return 0.0, 0.0, 0.0
-        coverage = float(np.mean(priors > 0))
-        max_p    = float(np.max(priors))
-        mean_p   = float(np.mean(priors))
-        return coverage, max_p, mean_p
-
+ 
     @staticmethod
     def _valid_actions_mask(agents_used: List[bool]) -> List[int]:
         """
@@ -292,7 +217,7 @@ class Simulation:
         return [
             int(not agents_used[0]),   # QR
             int(not agents_used[1]),   # RR
-            int(not agents_used[2]),   # CP
+            int(not agents_used[2]),   # PRF
             1,                          # STOP always available
         ]
 
@@ -323,7 +248,7 @@ class Simulation:
         """
         Assemble the full state vector for the current MDP step.
 
-        State layout (dim = 786):
+        State layout (dim = 783):
             [0]       query_length     whitespace token count
             [1:769]   query_embedding  768-d float32
             [769]     score_spread     std(top-k scores)
@@ -334,10 +259,7 @@ class Simulation:
             [776]     recall_change    ΔRecall@100 vs episode baseline
             [777]     elapsed_time     cumulative elapsed_ms / elapsed_time_norm
             [778]     cost             cumulative action cost this episode
-            [779]     prior_coverage   fraction of top-50 docs with ≥1 click
-            [780]     max_prior        max click-prior score in top-50
-            [781]     mean_prior       mean click-prior score in top-50
-            [782:786] valid_actions    binary [qr_valid, rr_valid, cp_valid, stop_valid]
+            [779:783] valid_actions    binary [qr_valid, rr_valid, stop_valid]
 
         Parameters
         ----------
@@ -383,11 +305,6 @@ class Simulation:
         elapsed_norm = np.float32(elapsed_ms / cfg.elapsed_time_norm)
         cost_val     = np.float32(cum_cost)
 
-        # ── ORCAS click-prior features over top-50
-        coverage, max_p, mean_p = self._prior_features(
-            query, doc_ids, top_k=cfg.top_k_rerank
-        )
-
         # ── Valid-action mask
         valid_mask = np.array(
             self._valid_actions_mask(agents_used), dtype=np.float32
@@ -404,9 +321,6 @@ class Simulation:
             [rd],               # 1
             [elapsed_norm],     # 1
             [cost_val],         # 1
-            [np.float32(coverage)],  # 1
-            [np.float32(max_p)],     # 1
-            [np.float32(mean_p)],    # 1
             valid_mask,              # 4
         ])                           # total: 786
 
@@ -429,7 +343,7 @@ class Simulation:
 
         Parameters
         ----------
-        action     : ACTION_QR / ACTION_RR / ACTION_CP / ACTION_STOP
+        action     : ACTION_QR / ACTION_RR / ACTION_PRF / ACTION_STOP
         query      : current query string
         doc_ids    : current ranked document IDs
         doc_scores : retrieval scores aligned with doc_ids
@@ -446,12 +360,9 @@ class Simulation:
         t0 = time.perf_counter()
 
         if action == ACTION_STOP:
-            # No agent call - just compute final metrics
-            priors  = self._get_prior_scores(query, doc_ids)
             metrics = {
                 "ndcg":         Simulation.compute_ndcg(doc_ids, qrels, self.cfg.ndcg_k),
                 "recall":       Simulation.compute_recall(doc_ids, qrels, self.cfg.recall_k),
-                "satisfaction": Simulation.compute_click_satisfaction(priors, self.cfg.sat_k),
             }
             elapsed_ms = (time.perf_counter() - t0) * 1_000.0
             return query, list(doc_ids), doc_scores.copy(), metrics, elapsed_ms
@@ -460,16 +371,14 @@ class Simulation:
         if action not in [ACTION_QR, ACTION_RR, ACTION_CP]:
             raise ValueError(f"Unknown action id: {action}")
         
-        agent = self.agents[action]  # ACTION_QR=0, ACTION_RR=1, ACTION_CP=2
-        
+        agent = self.agents[action]  # ACTION_QR=0, ACTION_RR=1, ACTION_PRF=2
+    
         # Prepare query features for the agent
         query_features = {
             'query_text': query,
             'embedding': self.encoder.encode(query, convert_to_numpy=True, show_progress_bar=False),
             'doc_ids': doc_ids,
             'doc_scores': doc_scores,
-            'orcas_index': self.orcas_index,
-            'corpus': self.corpus,
             'retriever': self.retriever,
             'top_k_rerank': self.cfg.top_k_rerank,
         }
@@ -484,24 +393,22 @@ class Simulation:
         elapsed_ms = effects.get('elapsed_time', 0.0) * 1_000.0  # Convert to ms
         
         # Compute metrics on the new results
-        priors = self._get_prior_scores(new_query, new_doc_ids)
         metrics = {
             "ndcg":         Simulation.compute_ndcg(new_doc_ids, qrels, self.cfg.ndcg_k),
             "recall":       Simulation.compute_recall(new_doc_ids, qrels, self.cfg.recall_k),
-            "satisfaction": Simulation.compute_click_satisfaction(priors, self.cfg.sat_k),
         }
         
         return new_query, new_doc_ids, new_doc_scores, metrics, elapsed_ms
 
     # ── 3. Reward ─────────────────────────────────────────────────────────────
     def _compute_reward(
+            
+            
         self,
         ndcg_before:   float,
         ndcg_after:    float,
         recall_before: float,
         recall_after:  float,
-        sat_before:    float,
-        sat_after:     float,
         action:        int,
         done:          bool,
     ) -> float:
@@ -519,7 +426,6 @@ class Simulation:
         return float(
             cfg.reward_alpha * (ndcg_after   - ndcg_before)
             + cfg.reward_beta  * (recall_after - recall_before)
-            + cfg.reward_zeta  * (sat_after    - sat_before)
             - cfg.reward_gamma * ACTION_COSTS[action]
             - (0.0 if done else cfg.reward_delta)
         )
@@ -570,8 +476,6 @@ class Simulation:
         # ── Episode-start baselines for cumulative delta tracking
         baseline_ndcg   = Simulation.compute_ndcg(cur_ids, qrels, cfg.ndcg_k)
         baseline_recall = Simulation.compute_recall(cur_ids, qrels, cfg.recall_k)
-        baseline_priors = self._get_prior_scores(cur_query, cur_ids)
-        baseline_sat    = Simulation.compute_click_satisfaction(baseline_priors, cfg.sat_k)
 
         cum_ndcg_change   = 0.0
         cum_recall_change = 0.0
@@ -597,9 +501,6 @@ class Simulation:
             # ── Pre-action metrics snapshot
             ndcg_before   = Simulation.compute_ndcg(cur_ids, qrels, cfg.ndcg_k)
             recall_before = Simulation.compute_recall(cur_ids, qrels, cfg.recall_k)
-            sat_before    = Simulation.compute_click_satisfaction(
-                self._get_prior_scores(cur_query, cur_ids), cfg.sat_k
-            )
 
             # ── Terminal flag
             done = (action == ACTION_STOP) or (step == cfg.max_steps - 1)
@@ -610,13 +511,11 @@ class Simulation:
 
             ndcg_after   = metrics["ndcg"]
             recall_after = metrics["recall"]
-            sat_after    = metrics["satisfaction"]
 
             # ── Reward
             reward = self._compute_reward(
                 ndcg_before, ndcg_after,
                 recall_before, recall_after,
-                sat_before, sat_after,
                 action, done,
             )
 
@@ -658,8 +557,6 @@ class Simulation:
                     "ndcg_after":     ndcg_after,
                     "recall_before":  recall_before,
                     "recall_after":   recall_after,
-                    "sat_before":     sat_before,
-                    "sat_after":      sat_after,
                     "valid_actions":  valid,
                     "agents_used":    list(agents_used),
                 },
@@ -692,99 +589,6 @@ class Simulation:
             return ACTION_STOP
         raise ValueError(f"Unknown policy: {policy!r}. Choose 'random', 'expert', or 'stop'.")
 
-    def _policy_random(self, valid: List[int]) -> int:
-        """Uniform random over currently valid actions."""
-        eligible = [a for a, v in enumerate(valid) if v]
-        return random.choice(eligible)
-
-    def _policy_expert(
-        self,
-        query:      str,
-        doc_ids:    List[str],
-        doc_scores: np.ndarray,
-        qrels:      Dict[str, int],
-        valid:      List[int],
-    ) -> int:
-        """
-        Oracle greedy policy: try each valid non-STOP agent, pick the one
-        with the highest ΔNDCG@10. Falls back to STOP if nothing improves.
-        """
-        baseline    = Simulation.compute_ndcg(doc_ids, qrels, self.cfg.ndcg_k)
-        best_action = ACTION_STOP
-        best_delta  = 0.0
-
-        for action in [ACTION_QR, ACTION_RR, ACTION_CP]:
-            if not valid[action]:
-                continue
-            try:
-                _, new_ids, _, metrics, _ = self.compute_effects(
-                    action, query, doc_ids, doc_scores, qrels
-                )
-                delta = metrics["ndcg"] - baseline
-                if delta > best_delta:
-                    best_delta  = delta
-                    best_action = action
-            except Exception as exc:
-                logger.warning("Expert policy: action %d failed — %s", action, exc)
-
-        return best_action
-
-    # ── 6. Dataset generation ─────────────────────────────────────────────────
-    def generate_dataset(
-        self,
-        queries:        List[str],
-        doc_ids_map:    Dict[str, List[str]],
-        doc_scores_map: Dict[str, np.ndarray],
-        qrels_map:      Dict[str, Dict[str, int]],
-        policy:         str   = "mixed",
-        expert_ratio:   float = 0.5,
-    ) -> List[Transition]:
-        """
-        Generate the full offline training dataset across all queries.
-
-        Parameters
-        ----------
-        queries        : query strings
-        doc_ids_map    : {query: [doc_id, …]}  initial ranked lists
-        doc_scores_map : {query: np.ndarray}   initial scores
-        qrels_map      : {query: {doc_id: rel}}  MS MARCO v2.1 relevance labels
-        policy         : "random" | "expert" | "stop" | "mixed"
-        expert_ratio   : fraction of episodes using expert policy (mixed only)
-
-        Returns
-        -------
-        List[Transition]  – flat list ready for BC / CQL training
-        """
-        dataset: List[Transition] = []
-
-        for query in queries:
-            if query not in doc_ids_map:
-                logger.debug("Skipping %r – no initial retrieval results", query)
-                continue
-
-            ep_policy = (
-                ("expert" if random.random() < expert_ratio else "random")
-                if policy == "mixed"
-                else policy
-            )
-
-            try:
-                traj = self.generate_trajectory(
-                    query      = query,
-                    doc_ids    = doc_ids_map[query],
-                    doc_scores = doc_scores_map[query],
-                    qrels      = qrels_map.get(query, {}),
-                    policy     = ep_policy,
-                )
-                dataset.extend(traj)
-            except Exception as exc:
-                logger.warning("Trajectory failed for %r: %s", query, exc)
-
-        logger.info(
-            "Dataset: %d transitions from %d queries  (policy=%s)",
-            len(dataset), len(queries), policy,
-        )
-        return dataset
 
     # ── 7. Serialisation ──────────────────────────────────────────────────────
     @staticmethod

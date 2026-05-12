@@ -18,6 +18,8 @@ sentence-transformers = {version = "^5.2.3", python = ">=3.10,<3.14"}
 openai = "^2.24.0"
 requests = "^2.32.0"
 scipy = "^1.13.0"
+python-dotenv = "^1.2.2"
+tabulate = "^0.10.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

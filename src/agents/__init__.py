@@ -2,6 +2,6 @@
 
 from .reformulate import ReformulationAgent
 from .rerank import RerankingAgent
-from .click_prior import ClickPriorAgent
+from .prf import PRFAgent
 
-__all__ = ["ReformulationAgent", "RerankingAgent", "ClickPriorAgent"]
+__all__ = ["ReformulationAgent", "RerankingAgent", "PRFAgent"]

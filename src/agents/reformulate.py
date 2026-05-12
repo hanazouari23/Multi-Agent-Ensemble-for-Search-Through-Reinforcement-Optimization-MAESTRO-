@@ -5,6 +5,7 @@ import os
 import numpy as np
 import time
 from typing import Dict, Any, List, Tuple
+from dotenv import load_dotenv
 
 # system message sent to the LLM when reformulating queries
 SYSTEM_PROMPT = (
@@ -16,9 +17,10 @@ SYSTEM_PROMPT = (
 class ReformulationAgent(AgentBase):
     def __init__(self, embed_model: SentenceTransformer):
         super().__init__(agent_id=0, embed_model=embed_model)
+        load_dotenv()
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("API_KEY"),
+            api_key = os.getenv("API_KEY"),
             default_headers={
                 "HTTP-Referer": "MAESTRO-Query-Reformulator",
                 "X-Title": "Query Reformulator",
@@ -55,8 +57,9 @@ class ReformulationAgent(AgentBase):
         retrieval_time = time.time() - retrieval_start
         
         # 3. Extract doc_ids and scores
-        new_doc_ids = [doc_id for doc_id, _ in raw_results]
-        new_doc_scores = np.array([score for _, score in raw_results], dtype=np.float32)
+        print("Raw retrieval results:", raw_results)  # Debugging line
+        new_doc_ids = raw_results[0] if raw_results else []
+        new_doc_scores = np.array([result for result in raw_results[1]], dtype=np.float32)
         
         total_elapsed = reformulation_time + retrieval_time
         
