@@ -14,7 +14,7 @@ class PRFAgent(AgentBase):
     discriminative terms from their content using TF-IDF weighting. These terms are concatenated with 
     the original query and BM25 is re-run, potentially surfacing documents the initial search missed. """
 
-    def __init__(self, embed_model, num_expansion_terms=5):
+    def __init__(self, embed_model, num_expansion_terms=2):
         super().__init__(agent_id=2, embed_model=embed_model)
         self.num_expansion_terms = num_expansion_terms
     def compute_effects(self, query_features, raw_results) -> Dict[str, Any]:

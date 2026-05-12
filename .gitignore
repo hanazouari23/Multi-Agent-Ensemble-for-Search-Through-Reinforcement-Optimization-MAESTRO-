@@ -88,4 +88,10 @@ dmypy.json
 # Environment variables
 .env
 .env.local
+<<<<<<< Updated upstream
 data/orcas.tsv
+=======
+
+#data
+.data/
+>>>>>>> Stashed changes

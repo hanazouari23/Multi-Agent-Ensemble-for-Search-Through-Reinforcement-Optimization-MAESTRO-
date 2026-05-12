@@ -12,7 +12,6 @@ import argparse
 import numpy as np
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
-from tabulate import tabulate
 
 from src.agents.prf import PRFAgent
 
@@ -92,7 +91,7 @@ def collect_trajectories_batch(
 
 def _run_demo_mode(sim, qr_agent, rr_agent, prf_agent) -> None:
     """Run demo mode: test individual agents and single trajectory."""
-    query = "Restaurants in Passau"
+    query = "Improve performance python?"
     
     # Retrieve documents for demo query
     seg_ids, doc_scores, corpus_data = sim.retriever(query, top_k=10)
@@ -108,18 +107,18 @@ def _run_demo_mode(sim, qr_agent, rr_agent, prf_agent) -> None:
     print("="*50)
 
     # Test ReformulationAgent
-    print("\n[1] Testing ReformulationAgent...")
-    if os.getenv("API_KEY"):
-        query_features = {
-            'query_text': query,
-            'retriever': sim.retriever,
-        }
-        effects = qr_agent.compute_effects(query_features)
-        print(f"   Reformulated: '{effects['new_query_text']}'")
-        print(f"   New docs: {len(effects['new_doc_ids'])}")
-        print(f"   Time: {effects['elapsed_time']:.3f}s")
-    else:
-        print("   Skipping ReformulationAgent (API_KEY not set)")
+    # print("\n[1] Testing ReformulationAgent...")
+    # if os.getenv("API_KEY"):
+    #     query_features = {
+    #         'query_text': query,
+    #         'retriever': sim.retriever,
+    #     }
+    #     effects = qr_agent.compute_effects(query_features)
+    #     print(f"   Reformulated: '{effects['new_query_text']}'")
+    #     print(f"   New docs: {len(effects['new_doc_ids'])}")
+    #     print(f"   Time: {effects['elapsed_time']:.3f}s")
+    # else:
+    #     print("   Skipping ReformulationAgent (API_KEY not set)")
 
     # Test RerankingAgent
     print("\n[2] Testing RerankingAgent...")
@@ -147,43 +146,95 @@ def _run_demo_mode(sim, qr_agent, rr_agent, prf_agent) -> None:
     print(f"   Retrieved segments after PRF: '{effects['new_segments']}'")
     print(f"   Time: {effects['elapsed_time']:.3f}s")
     
-    # Print comparative table
+    # Generate comparative HTML table
     print("\n" + "="*100)
     print("COMPARATIVE TABLE: Initial Segments vs. PRF-Processed Segments")
     print("="*100)
     
     initial_segments = list(corpus_data.values())
     prf_segments = list(effects['new_segments'])
-    initial_doc_ids = seg_ids
-    prf_doc_ids = effects['new_doc_ids']
-    initial_scores = doc_scores
-    prf_scores = effects['new_doc_scores']
     
-    # Prepare table data
-    table_data = []
     max_rows = max(len(initial_segments), len(prf_segments))
     
-    for i in range(max_rows):
-        initial_seg = initial_segments[i][:60] + "..." if i < len(initial_segments) and len(initial_segments[i]) > 60 else (initial_segments[i] if i < len(initial_segments) else "N/A")
-        initial_doc = initial_doc_ids[i] if i < len(initial_doc_ids) else "N/A"
-        initial_score = f"{initial_scores[i]:.4f}" if i < len(initial_scores) else "N/A"
-        
-        prf_seg = prf_segments[i][:60] + "..." if i < len(prf_segments) and len(prf_segments[i]) > 60 else (prf_segments[i] if i < len(prf_segments) else "N/A")
-        prf_doc = prf_doc_ids[i] if i < len(prf_doc_ids) else "N/A"
-        prf_score = f"{prf_scores[i]:.4f}" if i < len(prf_scores) else "N/A"
-        
-        table_data.append([
-            i+1,
-            initial_doc,
-            initial_seg,
-            initial_score,
-            prf_doc,
-            prf_seg,
-            prf_score
-        ])
+    # Generate HTML
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>PRF Comparison - Initial vs After PRF</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                background-color: #f5f5f5;
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                background-color: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            th {
+                background-color: #4CAF50;
+                color: white;
+                padding: 12px;
+                text-align: left;
+                font-weight: bold;
+                border: 1px solid #ddd;
+            }
+            td {
+                padding: 12px;
+                border: 1px solid #ddd;
+                vertical-align: top;
+            }
+            tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            tr:hover {
+                background-color: #f0f0f0;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>PRF Comparison: Initial Segments vs. After PRF Processing</h1>
+        <table>
+            <tr>
+                <th>Initial Segments</th>
+                <th>Segments After PRF</th>
+            </tr>
+    """
     
-    headers = ["#", "Initial Doc ID", "Initial Segment (truncated)", "Initial Score", "PRF Doc ID", "PRF Segment (truncated)", "PRF Score"]
-    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+    for i in range(max_rows):
+        initial_seg = initial_segments[i] if i < len(initial_segments) else "N/A"
+        prf_seg = prf_segments[i] if i < len(prf_segments) else "N/A"
+        
+        html_content += f"""
+            <tr>
+                <td>{initial_seg}</td>
+                <td>{prf_seg}</td>
+            </tr>
+        """
+    
+    html_content += """
+        </table>
+    </body>
+    </html>
+    """
+    
+    # Write HTML file
+    output_path = Path(__file__).parent.parent / "prf_comparison.html"
+    with open(output_path, 'w', encoding='utf-8') as htmlfile:
+        htmlfile.write(html_content)
+    
+    print(f"\nComparative table saved to: {output_path}")
+    print(f"Opening in browser...")
+    
+    import webbrowser
+    webbrowser.open(f'file://{output_path.absolute()}')
 
 
 def main():
