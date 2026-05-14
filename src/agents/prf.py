@@ -35,6 +35,7 @@ class PRFAgent(AgentBase):
         """
         retriever = query_features['retriever']
         original_query = query_features['query_text']
+        top_k = query_features['top_k']
 
         start_time = time.time();
         # 1. Extract expansion terms from top-k documents using TF-IDF (placeholder logic)
@@ -44,7 +45,7 @@ class PRFAgent(AgentBase):
         new_query_text = original_query + " " + " ".join(expansion_terms)
         
         # 4. Retrieve new documents with reformulated query
-        new_raw_results = retriever(new_query_text)
+        new_raw_results = retriever(new_query_text, top_k)  # Assuming retriever returns (doc_ids, scores, segments)
         end_time = time.time()
         # 5. Extract doc_ids and scores from new results
         new_doc_ids =  new_raw_results[0] if new_raw_results else []

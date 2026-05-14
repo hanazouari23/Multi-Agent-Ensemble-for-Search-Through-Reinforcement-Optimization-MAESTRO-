@@ -99,7 +99,7 @@ def create_retriever_callable(retriever_instance: Retriever) -> callable:
         - scores: np.ndarray of BM25 scores
         - corpus_data: Dict mapping doc_id -> text
     """
-    def retriever_func(query: str, top_k: int = 5) -> Tuple[List[str], np.ndarray, Dict[str, str]]:
+    def retriever_func(query: str, top_k: int) -> Tuple[List[str], np.ndarray, Dict[str, str]]:
         results = retriever_instance.retrieve(query, top_k=top_k)
         doc_ids = [doc['id'] for doc in results]
         scores = np.array([doc['score'] for doc in results], dtype=np.float32)

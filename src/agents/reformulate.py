@@ -45,6 +45,7 @@ class ReformulationAgent(AgentBase):
         """
         original_query = query_features['query_text']
         retriever = query_features['retriever']
+        top_k = query_features['top_k']
         
         # 1. Reformulate query with LLM
         start_time = time.time()
@@ -53,7 +54,7 @@ class ReformulationAgent(AgentBase):
         
         # 2. Retrieve new documents with reformulated query
         retrieval_start = time.time()
-        raw_results = retriever(reformulated_query)
+        raw_results = retriever(reformulated_query, top_k)
         retrieval_time = time.time() - retrieval_start
         
         # 3. Extract doc_ids and scores
