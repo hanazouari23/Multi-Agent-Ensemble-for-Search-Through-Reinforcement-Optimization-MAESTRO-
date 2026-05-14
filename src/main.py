@@ -238,82 +238,121 @@ def _run_demo_mode(sim, qr_agent, rr_agent, prf_agent) -> None:
 
 
 def main():
-    """Main launcher function."""
-    import argparse
+    # """Main launcher function."""
+    # import argparse
 
-    parser = argparse.ArgumentParser(
-        description="MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization"
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["demo", "collect"],
-        default="demo",
-        help="demo: test individual agents; collect: generate trajectories for offline RL",
-    )
-    parser.add_argument(
-        "--n-trajectories",
-        type=int,
-        default=100,
-        help="Number of trajectories to collect (for --mode collect)",
-    )
-    parser.add_argument(
-        "--sampling-strategy",
-        choices=["random", "stratified", "sequential"],
-        default="random",
-        help="Query sampling strategy for trajectory collection",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="trajectories",
-        help="Output directory for trajectory files",
-    )
+    # parser = argparse.ArgumentParser(
+    #     description="MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization"
+    # )
+    # parser.add_argument(
+    #     "--mode",
+    #     choices=["demo", "collect"],
+    #     default="demo",
+    #     help="demo: test individual agents; collect: generate trajectories for offline RL",
+    # )
+    # parser.add_argument(
+    #     "--n-trajectories",
+    #     type=int,
+    #     default=100,
+    #     help="Number of trajectories to collect (for --mode collect)",
+    # )
+    # parser.add_argument(
+    #     "--sampling-strategy",
+    #     choices=["random", "stratified", "sequential"],
+    #     default="random",
+    #     help="Query sampling strategy for trajectory collection",
+    # )
+    # parser.add_argument(
+    #     "--output-dir",
+    #     default="trajectories",
+    #     help="Output directory for trajectory files",
+    # )
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    print("Starting MAESTRO Simulation")
+    # print("Starting MAESTRO Simulation")
 
-    # Initialize encoder
-    print("Loading sentence transformer...")
-    encoder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    # # Initialize encoder
+    # print("Loading sentence transformer...")
+    # encoder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-    # Initialize retriever
-    print("Setting up retriever...")
-    retriever_instance = Retriever()
-    retriever_func = create_retriever_callable(retriever_instance)
+    # # Initialize retriever
+    # print("Setting up retriever...")
+    # retriever_instance = Retriever()
+    # retriever_func = create_retriever_callable(retriever_instance)
 
 
-    # Create agents
-    print("Creating agents...")
-    qr_agent = ReformulationAgent(encoder)
-    rr_agent = RerankingAgent(encoder)
-    prf_agent = PRFAgent(encoder)
+    # # Create agents
+    # print("Creating agents...")
+    # qr_agent = ReformulationAgent(encoder)
+    # rr_agent = RerankingAgent(encoder)
+    # prf_agent = PRFAgent(encoder)
     
-    agents = [qr_agent, rr_agent, prf_agent]
+    # agents = [qr_agent, rr_agent, prf_agent]
 
-    # Create simulation
-    print("Setting up simulation...")
-    config = SimConfig()
-    sim = Simulation(
-        encoder=encoder,
-        retriever=retriever_func,
-        agents=agents,
-        config=config
-    )
+    # # Create simulation
+    # print("Setting up simulation...")
+    # config = SimConfig()
+    # sim = Simulation(
+    #     encoder=encoder,
+    #     retriever=retriever_func,
+    #     agents=agents,
+    #     config=config
+    # )
 
-    # Mode: demo or collect
-    if args.mode == "demo":
-        _run_demo_mode(sim, qr_agent, rr_agent, prf_agent)
-    elif args.mode == "collect":
-        collect_trajectories_batch(
-            retriever_func,
-            sim,
-            n_trajectories=args.n_trajectories,
-            sampling_strategy=args.sampling_strategy,
-            output_dir=args.output_dir,
-        )
+    # # Mode: demo or collect
+    # if args.mode == "demo":
+    #     _run_demo_mode(sim, qr_agent, rr_agent, prf_agent)
+    # elif args.mode == "collect":
+    #     collect_trajectories_batch(
+    #         retriever_func,
+    #         sim,
+    #         n_trajectories=args.n_trajectories,
+    #         sampling_strategy=args.sampling_strategy,
+    #         output_dir=args.output_dir,
+    #     )
 
-    print("\nMAESTRO completed successfully!")
+    # print("\nMAESTRO completed successfully!")
+    import pandas as pd
+    from collections import defaultdict
+    import ir_datasets
 
+    dataset = ir_datasets.load("msmarco-passage/train/judged")
+
+    print("Loading query texts...")
+    query_text_map = {}
+    for query in dataset.queries_iter():
+        query_text_map[str(query.query_id)] = query.text
+    print(f"✓ Loaded {len(query_text_map)} query texts")
+
+    print("\nLoading qrels...")
+    qrels_by_query = defaultdict(list)
+    for qrel in dataset.qrels_iter():
+        qrels_by_query[qrel.query_id].append(qrel)
+    print(f"✓ Loaded {len(qrels_by_query)} queries with qrels")
+
+    queries_with_3plus = {
+        qid: qrels for qid, qrels in qrels_by_query.items() if len(qrels) >= 3
+    }
+    print(f"✓ Found {len(queries_with_3plus)} queries with >= 3 qrels")
+
+    csv_data = []
+    for query_id, qrels in queries_with_3plus.items():
+        query_text = query_text_map.get(str(query_id), "")
+        for qrel in qrels:
+            csv_data.append({
+                'query_id':   str(qrel.query_id),
+                'query_text': query_text,
+                'doc_id':     str(qrel.doc_id),
+                'relevance':  int(qrel.relevance),
+                'iteration':  str(getattr(qrel, 'iteration', '0'))
+            })
+
+    df = pd.DataFrame(csv_data)
+    df.to_csv('msmarco_queries_3plus_qrels.csv', index=False, encoding='utf-8')
+    print(f"\n✓ Saved {len(csv_data)} qrels from {len(queries_with_3plus)} queries")
+    print(f"\nQrels per query stats:")
+    print(df.groupby('query_id').size().describe())
 
 
 
