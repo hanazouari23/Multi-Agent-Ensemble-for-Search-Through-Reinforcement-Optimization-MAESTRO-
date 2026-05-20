@@ -18,14 +18,17 @@ class ReformulationAgent(AgentBase):
     def __init__(self, embed_model: SentenceTransformer):
         super().__init__(agent_id=0, embed_model=embed_model)
         load_dotenv()
+        api_key = os.getenv("UNI_API_KEY")
+        print("api_key:", api_key)
         self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key = os.getenv("API_KEY"),
+            base_url=os.getenv("BASE_URL_UNI"),
+            api_key = os.getenv("UNI_API_KEY"),
             default_headers={
                 "HTTP-Referer": "MAESTRO-Query-Reformulator",
                 "X-Title": "Query Reformulator",
             }
         )
+    
     
     def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -58,7 +61,6 @@ class ReformulationAgent(AgentBase):
         retrieval_time = time.time() - retrieval_start
         
         # 3. Extract doc_ids and scores
-        print("Raw retrieval results:", raw_results)  # Debugging line
         new_doc_ids = raw_results[0] if raw_results else []
         new_doc_scores = np.array([result for result in raw_results[1]], dtype=np.float32)
         
@@ -72,8 +74,9 @@ class ReformulationAgent(AgentBase):
         }
     
     def _call_llm(self, query: str) -> str:
+        print("Model name:", os.getenv("QWEN_MODEL"))
         response = self.client.chat.completions.create(
-            model="anthropic/claude-sonnet-4.6",
+            model=os.getenv("QWEN_MODEL"),
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
@@ -81,7 +84,10 @@ class ReformulationAgent(AgentBase):
             temperature=0.2,
             max_tokens=64,
         )
-        content = response.choices[0].message.content.strip() 
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError("No content returned from LLM")
+        content = content.strip()
         if not content:
-            raise RuntimeError("No choices returned")  
+            raise RuntimeError("LLM returned empty content")  
         return content
