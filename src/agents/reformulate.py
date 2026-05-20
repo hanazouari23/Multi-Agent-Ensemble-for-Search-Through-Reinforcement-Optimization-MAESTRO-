@@ -13,16 +13,16 @@ SYSTEM_PROMPT = (
     "Given a user query, you rewrite it into a clearer, more complete search query. "
     "Preserve the original intent and return only the rewritten query."
 )
-
+API_KEY = os.getenv("LLMAPI_KEY")
+BASE_URL = os.getenv("BASE_URL_HPC")  # or BASE_URL_UNI depending on the environment
+MODEL_NAME = os.getenv("MODEL_NAME_HPC")  # or MODEL_NAME_UNI depending on the environment
 class ReformulationAgent(AgentBase):
     def __init__(self, embed_model: SentenceTransformer):
         super().__init__(agent_id=0, embed_model=embed_model)
         load_dotenv()
-        api_key = os.getenv("UNI_API_KEY")
-        print("api_key:", api_key)
         self.client = OpenAI(
-            base_url=os.getenv("BASE_URL_UNI"),
-            api_key = os.getenv("UNI_API_KEY"),
+            base_url=BASE_URL,
+            api_key=API_KEY,
             default_headers={
                 "HTTP-Referer": "MAESTRO-Query-Reformulator",
                 "X-Title": "Query Reformulator",
@@ -74,9 +74,9 @@ class ReformulationAgent(AgentBase):
         }
     
     def _call_llm(self, query: str) -> str:
-        print("Model name:", os.getenv("QWEN_MODEL"))
+        print("Model name:", MODEL_NAME)
         response = self.client.chat.completions.create(
-            model=os.getenv("QWEN_MODEL"),
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
@@ -88,6 +88,4 @@ class ReformulationAgent(AgentBase):
         if content is None:
             raise RuntimeError("No content returned from LLM")
         content = content.strip()
-        if not content:
-            raise RuntimeError("LLM returned empty content")  
         return content
