@@ -9,9 +9,10 @@ from dotenv import load_dotenv
 
 # system message sent to the LLM when reformulating queries
 SYSTEM_PROMPT = (
-    "You are a query rewriting assistant. "
-    "Given a user query, you rewrite it into a clearer, more complete search query. "
-    "Preserve the original intent and return only the rewritten query."
+    "You are an information retrieval expert. "
+    "Given a user query and the top-k retrieved document snippets, generate 2-3 expansion terms "
+    "that capture key concepts from the retrieved documents to better augment the original query. "
+    "Return ONLY the expansion terms separated by spaces, no explanations."
 )
 API_KEY = os.getenv("LLMAPI_KEY")
 BASE_URL = os.getenv("BASE_URL_HPC")  # or BASE_URL_UNI depending on the environment
@@ -32,60 +33,78 @@ class ReformulationAgent(AgentBase):
     
     def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Reformulate the query and retrieve new documents.
+        Generate query expansion terms from baseline retrieved documents.
         
         Args:
             query_features: Dict containing:
                 - 'query_text': str - the original query
-                - 'retriever': callable - function to retrieve documents
+                - 'raw_results': Tuple - (doc_ids, doc_scores, corpus) from baseline retrieval
                 
         Returns:
             Dict with:
-                - 'new_query_text': str - reformulated query
-                - 'new_doc_ids': List[str] - new document IDs
-                - 'new_doc_scores': np.ndarray - new document scores
-                - 'elapsed_time': float - time taken for reformulation + retrieval
+                - 'new_query_text': str - original query + expansion terms
         """
         original_query = query_features['query_text']
-        retriever = query_features['retriever']
-        top_k = query_features['top_k']
+        raw_results = query_features['raw_results']
         
-        # 1. Reformulate query with LLM
+        doc_ids, doc_scores, corpus = raw_results
+        top_k = len(doc_ids)
+        
+        # Generate expansion terms from retrieved documents
         start_time = time.time()
-        reformulated_query = self._call_llm(original_query)
-        reformulation_time = time.time() - start_time
+        expansion_terms = self._call_llm(original_query, doc_ids, corpus, top_k)
+        expansion_time = time.time() - start_time
         
-        # 2. Retrieve new documents with reformulated query
-        retrieval_start = time.time()
-        raw_results = retriever(reformulated_query, top_k)
-        retrieval_time = time.time() - retrieval_start
-        
-        # 3. Extract doc_ids and scores
-        new_doc_ids = raw_results[0] if raw_results else []
-        new_doc_scores = np.array([result for result in raw_results[1]], dtype=np.float32)
-        
-        total_elapsed = reformulation_time + retrieval_time
+        # Combine original query with expansion terms
+        expanded_query = f"{original_query} {expansion_terms}"
         
         return {
-            'new_query_text': reformulated_query,
-            'new_doc_ids': new_doc_ids,
-            'new_doc_scores': new_doc_scores,
-            'elapsed_time': total_elapsed,
+            'new_query_text': expanded_query,
+            'elapsed_time': expansion_time,
         }
     
-    def _call_llm(self, query: str) -> str:
-        print("Model name:", MODEL_NAME)
+    def _call_llm(self, query: str, doc_ids: List[str], corpus: Dict[str, str], top_k: int) -> str:
+        """
+        Generate expansion terms based on original query and top-k retrieved documents.
+        
+        Args:
+            query: Original query text
+            doc_ids: List of retrieved document IDs
+            corpus: Dictionary mapping doc_ids to document text
+            top_k: Number of top documents to consider
+            
+        Returns:
+            Expansion terms as a single string
+        """
+        # Extract top-k document snippets
+        doc_snippets = []
+        for i, doc_id in enumerate(doc_ids[:top_k]):
+            if doc_id in corpus:
+                snippet = corpus[doc_id]
+                # Limit snippet length for context window
+                snippet = snippet[:300] if len(snippet) > 300 else snippet
+                doc_snippets.append(f"Doc {i+1}: {snippet}")
+        
+        # Build user message with query and document context
+        user_message = (
+            f"Query: {query}\n\n"
+            f"Top-{len(doc_snippets)} retrieved documents:\n"
+            + "\n".join(doc_snippets)
+        )
+        
         response = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": query},
+                {"role": "user", "content": user_message},
             ],
             temperature=0.2,
             max_tokens=64,
         )
+        
         content = response.choices[0].message.content
         if content is None:
             raise RuntimeError("No content returned from LLM")
-        content = content.strip()
-        return content
+        
+        expansion_terms = content.strip()
+        return expansion_terms
