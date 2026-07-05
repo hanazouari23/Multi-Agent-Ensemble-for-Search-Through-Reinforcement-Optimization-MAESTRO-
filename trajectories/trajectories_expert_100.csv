@@ -1,0 +1,101 @@
+trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
+0,0,what is pcnt,what is pcnt,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+1,0,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+2,0,what is pastoral medicine,what is pastoral medicine,3,STOP,0.000000,True,0.430677,0.430677,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+3,0,what is ownership of a corporation called,what is ownership of a corporation called,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+4,0,what is prevail,what is prevail,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting?,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+6,0,what is price of pressure treated lumber 2x6x8,what is price of pressure treated lumber 2x6x8,3,STOP,0.000000,True,0.356207,0.356207,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+7,0,what is outlook data file,what is outlook data file,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+8,0,how long is a flight from chicago to australia,how long is a flight from chicago to australia,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+9,0,what is ott media,what is ott media,3,STOP,0.000000,True,0.218104,0.218104,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+10,0,what is organic insomnia,what is organic insomnia,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+11,0,what is oprah winfrey's net wo,what is oprah winfrey's net wo,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+12,0,trending topic meaning,trending topic meaning,3,STOP,0.000000,True,0.301030,0.301030,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+13,0,who produced transformers,who produced transformers,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+14,0,trilobites definition,trilobites definition,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+15,0,triptans minimum age,triptans minimum age,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+16,0,when do the oscar awards start,when do the oscar awards start,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+17,0,tsa wages and benefits,tsa wages and benefits,3,STOP,0.000000,True,0.613147,0.613147,0.500000,0.500000,0.000000,0.000000,0.00,0.00
+18,0,how long is a zip code,how long is a zip code,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+19,0,average settlement for hearing damage and loss,average settlement for hearing damage and loss,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+20,0,what is nick hagen most famous for,what is nick hagen most famous for,3,STOP,0.000000,True,0.227670,0.227670,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+21,0,what is neutron diffraction,what is neutron diffraction,3,STOP,0.000000,True,0.430677,0.430677,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+22,0,who sang i;m a believer for shrek,who sang i;m a believer for shrek,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+23,0,who sang mr bojangles originally,who sang mr bojangles originally,3,STOP,0.000000,True,0.386853,0.386853,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+24,0,twitching eyelids causes,twitching eyelids causes,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+25,0,what is postage,what is postage,3,STOP,0.000000,True,0.270238,0.270238,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+26,0,613 585 area code,613 585 area code,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+27,0,type of frisbee that goes the longest distance,type of frisbee that goes the longest distance,3,STOP,0.000000,True,0.218104,0.218104,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+28,0,what is mvd,what is mvd,3,STOP,0.000000,True,0.231378,0.231378,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+29,0,what is mutual plan,what is mutual plan,3,STOP,0.000000,True,0.278943,0.278943,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+30,0,what is musical setting,what is musical setting,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+31,0,what is pumpkin,what is pumpkin,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+32,0,what is printer epl,what is printer epl,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+33,0,what is most conductive material,what is most conductive material,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+34,0,what is monetary damages mean,what is monetary damages mean,3,STOP,0.000000,True,0.386853,0.386853,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+35,0,what is the maximum tire year,what is the maximum tire year,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+36,0,what is mixed gas diving,what is mixed gas diving,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+37,0,average size of an enzyme,average size of an enzyme,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+38,0,cost for stone veneer installation,cost for stone veneer installation,3,STOP,0.000000,True,0.255958,0.255958,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+39,0,what is microsoft mpp file,what is microsoft mpp file,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+40,0,what is quality assurance in educational system,what is quality assurance in educational system,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+41,0,who sings gold on the ceiling just,who sings gold on the ceiling just,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+42,0,types of cells,types of cells,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+43,0,DJ Paul Net Worth 2014,DJ Paul Net Worth 2014,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+44,0,how long is the exploration phase of mining,how long is the exploration phase of mining,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+45,0,what is medical phi,what is medical phi,3,STOP,0.000000,True,0.278943,0.278943,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+46,0,what is meant by the unit dose supply method?,what is meant by the unit dose supply method?,3,STOP,0.000000,True,0.430677,0.430677,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+47,0,who sings love shack baby,who sings love shack baby,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+48,0,what is meant by solution concentration and what are the different ways to express the concentration of a solution?,what is meant by solution concentration and what are the different ways to express the concentration of a solution?,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+49,0,what is meant by robust software,what is meant by robust software,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+50,0,types of currency of iceland,types of currency of iceland,3,STOP,0.000000,True,0.333333,0.333333,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+51,0,who sings on the road again,who sings on the road again,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+52,0,what is matilda jane clothing,what is matilda jane clothing,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+53,0,what is mama,what is mama,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+54,0,"what is magnesium,","what is magnesium,",3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+55,0,Foods to Feed A 10 Month Old,Foods to Feed A 10 Month Old,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+56,0,what is lsr stand for,what is lsr stand for,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+57,0,what is lottery age to purchase a ticket in,what is lottery age to purchase a ticket in,3,STOP,0.000000,True,0.289065,0.289065,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+58,0,who sings the beach song do the bop,who sings the beach song do the bop,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+59,0,How Much is Blanket Jackson Worth,How Much is Blanket Jackson Worth,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+60,0,what is lemonwire,what is lemonwire,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+61,0,who sings time won't let me,who sings time won't let me,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+62,0,what is leflunomide used to treat,what is leflunomide used to treat,3,STOP,0.000000,True,0.356207,0.356207,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+63,0,who sings walking in the air,who sings walking in the air,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+64,0,what is kt tape made of,what is kt tape made of,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+65,0,who sings you sexy thing,who sings you sexy thing,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+66,0,what is keynote app used for,what is keynote app used for,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+67,0,types of humbucker pickups,types of humbucker pickups,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+68,0,who starred.in the miracle.worker,who starred.in the miracle.worker,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+69,0,types of iron lines cornea,types of iron lines cornea,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+70,0,who started black history month and what year,who started black history month and what year,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+71,0,how long ribs in bbq sauce,how long ribs in bbq sauce,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+72,0,what is john adams background?,what is john adams background?,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+73,0,how long schooling for lvn and salaries for california,how long schooling for lvn and salaries for california,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+74,0,product extension definition,product extension definition,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+75,0,meaning of seep,meaning of seep,3,STOP,0.000000,True,0.315465,0.315465,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+76,0,how long is a schedule 2 prescription valid,how long is a schedule 2 prescription valid,3,STOP,0.000000,True,0.315465,0.315465,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+77,0,what is the meaning of bottom line?,what is the meaning of bottom line?,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+78,0,what is profitability potential,what is profitability potential,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+79,0,what is iron used for today,what is iron used for today,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+80,0,who uses puppets,who uses puppets,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+81,0,how long should bleeding last after labor,how long should bleeding last after labor,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+82,0,how long should circle time be for preschool,how long should circle time be for preschool,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+83,0,what is international trap,what is international trap,3,STOP,0.000000,True,0.262650,0.262650,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+84,0,who voices jake jr,who voices jake jr,3,STOP,0.000000,True,0.386853,0.386853,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+85,0,types of misdemeanor charges,types of misdemeanor charges,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+86,0,how long should hardwood acclimate,how long should hardwood acclimate,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+87,0,what is insured first name,what is insured first name,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+88,0,what is resiliency,what is resiliency,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+89,0,how long should i cook an egg to hard boil,how long should i cook an egg to hard boil,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+90,0,what is installed at the finish of plumbing stage,what is installed at the finish of plumbing stage,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+91,0,who was alima,who was alima,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+92,0,which compounds behave as acids when dissolved in water,which compounds behave as acids when dissolved in water,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+93,0,how long should i study for mcat,how long should i study for mcat,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+94,0,who was beverly archer on the young & the restless,who was beverly archer on the young & the restless,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+95,0,what is the ghost,what is the ghost,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+96,0,types of penguins species,types of penguins species,3,STOP,0.000000,True,0.200000,0.200000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+97,0,what is in the host file,what is in the host file,3,STOP,0.000000,True,0.212746,0.212746,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+98,0,who was cludes brother in the movie bonnie and clyde,who was cludes brother in the movie bonnie and clyde,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+99,0,what is idiopathic transverse myelitis?,what is idiopathic transverse myelitis?,3,STOP,0.000000,True,0.244651,0.244651,1.000000,1.000000,0.000000,0.000000,0.00,0.00

@@ -1,0 +1,6 @@
+trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
+0,0,what is pcnt,what is pcnt,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+1,0,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+2,0,what is pastoral medicine,what is pastoral medicine,3,STOP,0.000000,True,0.430677,0.430677,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+3,0,what is ownership of a corporation called,what is ownership of a corporation called,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+4,0,what is prevail,what is prevail,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00

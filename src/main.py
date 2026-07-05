@@ -2,19 +2,27 @@
 """
 MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization
 
-Launcher script demonstrating the agent-based simulation architecture.
+Main entry point for offline RL trajectory collection.
+Generates trajectories by simulating multi-agent retrieval optimization,
+exports to CSV for offline RL training.
 """
 
 import os
 import sys
+import csv
 import json
+import logging
 import argparse
-import numpy as np
 from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+from collections import defaultdict
+
+import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from src.agents.prf import PRFAgent
-
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Setup path
 src_path = Path(__file__).parent
@@ -40,321 +48,370 @@ load_env_file()
 # Support both package and direct execution
 try:
     # Relative imports (when run as package)
-    from .simulation import Simulation, SimConfig
+    from .simulation import Simulation, SimConfig, Transition
     from .core.agents import AgentBase
-    from .agents import ReformulationAgent, RerankingAgent, PRFAgent
+    from .agents.reformulate import ReformulationAgent
+    from .agents.rerank import RerankingAgent
+    from .agents.prf import PRFAgent
     from .utils.retriever import Retriever, create_retriever_callable
 except ImportError:
     # Absolute imports (when run as script)
-    from simulation import Simulation, SimConfig
+    from simulation import Simulation, SimConfig, Transition
     from core.agents import AgentBase
-    from agents import ReformulationAgent, RerankingAgent, ClickPriorAgent
+    from agents.reformulate import ReformulationAgent
+    from agents.rerank import RerankingAgent
+    from agents.prf import PRFAgent
     from utils.retriever import Retriever, create_retriever_callable
 
 
-def get_base_doc_id(segment_id: str) -> str:
-    """Strip segment suffix: 'msmarco_v2.1_doc_05_123#3_456' → 'msmarco_v2.1_doc_05_123'"""
-    return segment_id.split('#')[0]
+# ─────────────────────────────────────────────────────────────────────────────
+# Data Loading
+# ─────────────────────────────────────────────────────────────────────────────
 
-def collect_trajectories_batch(
-    retriever: callable,
-    sim,
-    n_trajectories: int = 100,
-    sampling_strategy: str = "random",
-    output_dir: str = "trajectories",
-) -> None:
+def load_qrels(qrels_path: str) -> Dict[str, Dict[str, int]]:
+    qrels = defaultdict(dict)
+    with open(qrels_path, "r", encoding="utf-8") as f:
+        header = next(f).strip().split("\t")
+        for line in f:
+            parts = line.strip().split("\t")
+            if len(parts) < 3:
+                continue
+
+            # Supports: query_id \t doc_id \t grade
+            query_id = parts[0].strip()
+            doc_id = parts[2].strip()
+            try:
+                grade = int(parts[3].strip())
+            except ValueError:
+                continue
+
+            qrels[query_id][doc_id] = grade
+
+    logger.info(f"Loaded qrels for {len(qrels)} queries from {qrels_path}")
+    return dict(qrels)
+
+def load_queries(queries_path: str, num_queries: Optional[int] = None) -> List[Tuple[str, str]]:
+    queries = []
+    with open(queries_path, "r", encoding="utf-8") as f:
+        next(f)  # skip header
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                query_id = parts[0].strip()
+                query_text = parts[1].strip()
+            else:
+                query_id = str(len(queries))
+                query_text = parts[0].strip()
+
+            queries.append((query_id, query_text))
+            if num_queries and len(queries) >= num_queries:
+                break
+
+    logger.info(f"Loaded {len(queries)} queries from {queries_path}")
+    return queries
+
+
+def load_initial_retrieval(
+    query: str,
+    retriever_func: callable,
+    top_k: int = 50,
+) -> Tuple[List[str], np.ndarray, Dict[str, str]]:
     """
-    Collect a batch of trajectories for offline RL training.
-
+    Load initial retrieval results using BM25 backend.
+    
     Parameters
     ----------
-    sim : Simulation
-        The simulation instance
-    orcas_index : dict
-        Query → [clicked_docs] mapping from ORCAS
-    n_trajectories : int
-        Number of trajectories to collect
-    sampling_strategy : str
-        "random", "stratified", or "sequential"
-    output_dir : str
-        Output directory for saved trajectories
+    query : str
+        Query string
+    retriever_func : callable
+        Retriever function returning (doc_ids, scores, corpus_data)
+    top_k : int
+        Number of documents to retrieve
+    
+    Returns
+    -------
+    doc_ids : List[str]
+    doc_scores : np.ndarray
+        BM25 scores
+    corpus_data : Dict[str, str]
+        Mapping of doc_id -> document text
     """
-    output_path = Path(__file__).parent.parent / output_dir
-    output_path.mkdir(exist_ok=True)
+    try:
+        doc_ids, doc_scores, corpus_data = retriever_func(query, top_k)
+        return doc_ids, doc_scores, corpus_data
+    except Exception as e:
+        logger.error(f"Retrieval failed for query '{query}': {e}")
 
-    print(f"\n" + "="*60)
-    print("BATCH TRAJECTORY COLLECTION FOR OFFLINE RL")
-    print("="*60)
-    print(f"Target trajectories:  {n_trajectories}")
-    print(f"Sampling strategy:    {sampling_strategy}")
-    print(f"Output directory:     {output_path}")
 
-def _run_demo_mode(sim, qr_agent, rr_agent, prf_agent) -> None:
-    """Run demo mode: test individual agents and single trajectory."""
-    query = "Improve performance python?"
-    
-    # Retrieve documents for demo query
-    seg_ids, doc_scores, corpus_data = sim.retriever(query, top_k=10)
+# ─────────────────────────────────────────────────────────────────────────────
+# Main Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
 
-    print(f"\nDemo Query: '{query}'")
-    print(f"Initial documents: {seg_ids}")
-    print(f"Initial segments: {corpus_data.values()}")
-    print(f"Initial scores: {doc_scores}")
-
-    # Test each agent individually
-    print("\n" + "="*50)
-    print("Testing Individual Agents")
-    print("="*50)
-
-    # Test ReformulationAgent
-    # print("\n[1] Testing ReformulationAgent...")
-    # if os.getenv("API_KEY"):
-    #     query_features = {
-    #         'query_text': query,
-    #         'retriever': sim.retriever,
-    #     }
-    #     effects = qr_agent.compute_effects(query_features)
-    #     print(f"   Reformulated: '{effects['new_query_text']}'")
-    #     print(f"   New docs: {len(effects['new_doc_ids'])}")
-    #     print(f"   Time: {effects['elapsed_time']:.3f}s")
-    # else:
-    #     print("   Skipping ReformulationAgent (API_KEY not set)")
-
-    # Test RerankingAgent
-    print("\n[2] Testing RerankingAgent...")
-    query_features = {
-        'query_text': query,
-        'doc_ids': seg_ids,
-        'doc_scores': doc_scores,
-        'corpus': corpus_data,
-        'top_k_rerank': 3,
-    }
-    effects = rr_agent.compute_effects(query_features)
-    print(f"   Reranked docs: {effects['new_doc_ids']}")
-    print(f"   New scores: {effects['new_doc_scores']}")
-    print(f"   Time: {effects['elapsed_time']:.3f}s")
-
-    # Test PRFAgent
-    print("\n[3] Testing PRFAgent...")
-    query_features = {
-            'query_text': query,
-            'retriever': sim.retriever,
-        }
-    effects = prf_agent.compute_effects(query_features, raw_results=(seg_ids, doc_scores, corpus_data))
-    print(f"   Reweighted docs: {effects['new_doc_ids']}")
-    print(f"   New scores: {effects['new_doc_scores']}")
-    print(f"   Retrieved segments after PRF: '{effects['new_segments']}'")
-    print(f"   Time: {effects['elapsed_time']:.3f}s")
-    
-    # Generate comparative HTML table
-    print("\n" + "="*100)
-    print("COMPARATIVE TABLE: Initial Segments vs. PRF-Processed Segments")
-    print("="*100)
-    
-    initial_segments = list(corpus_data.values())
-    prf_segments = list(effects['new_segments'])
-    
-    max_rows = max(len(initial_segments), len(prf_segments))
-    
-    # Generate HTML
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>PRF Comparison - Initial vs After PRF</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                margin: 20px;
-                background-color: #f5f5f5;
-            }
-            h1 {
-                color: #333;
-                text-align: center;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                background-color: white;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            th {
-                background-color: #4CAF50;
-                color: white;
-                padding: 12px;
-                text-align: left;
-                font-weight: bold;
-                border: 1px solid #ddd;
-            }
-            td {
-                padding: 12px;
-                border: 1px solid #ddd;
-                vertical-align: top;
-            }
-            tr:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            tr:hover {
-                background-color: #f0f0f0;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>PRF Comparison: Initial Segments vs. After PRF Processing</h1>
-        <table>
-            <tr>
-                <th>Initial Segments</th>
-                <th>Segments After PRF</th>
-            </tr>
+def generate_trajectories(
+    config: SimConfig,
+    qrels: Dict[str, int],
+    queries: List[str],
+    encoder: SentenceTransformer,
+    agents: List[AgentBase],
+    retriever: callable,
+    num_trajectories: int = 100,
+    policy: str = "random",
+) -> List[List[Transition]]:
     """
+    Generate offline RL trajectories for a set of queries.
     
-    for i in range(max_rows):
-        initial_seg = initial_segments[i] if i < len(initial_segments) else "N/A"
-        prf_seg = prf_segments[i] if i < len(prf_segments) else "N/A"
+    Parameters
+    ----------
+    config : SimConfig
+        Simulation configuration
+    qrels : Dict[str, int]
+        Query relevance judgments {doc_id: grade}
+    queries : List[str]
+        List of query strings
+    encoder : SentenceTransformer
+        Query encoder
+    agents : List[AgentBase]
+        [ReformulationAgent, RerankingAgent, PRFAgent]
+    retriever : callable
+        Retrieval function returning (doc_ids, scores, corpus_data)
+    num_trajectories : int
+        Number of trajectories to generate (uses first N queries)
+    policy : str
+        Action selection policy: "random", "expert", "stop"
+    
+    Returns
+    -------
+    List[List[Transition]]
+        All generated trajectories
+    """
+    logger.info(f"\n{'='*70}")
+    logger.info("TRAJECTORY GENERATION PIPELINE")
+    logger.info(f"{'='*70}")
+    logger.info(f"Number of trajectories: {num_trajectories}")
+    logger.info(f"Policy: {policy}")
+    logger.info(f"Queries available: {len(queries)}")
+    logger.info(f"Config: max_steps={config.max_steps}, top_k_rerank={config.top_k_rerank}")
+    
+    # Initialize simulation
+    sim = Simulation(
+        encoder=encoder,
+        retriever=retriever,
+        agents=agents,
+        config=config,
+    )
+    
+    all_trajectories = []
+    
+    for traj_id in range(min(num_trajectories, len(queries))):
+        query_id,query = queries[traj_id]
+        logger.info(f"\n[Trajectory {traj_id+1}/{num_trajectories}] Query: {query[:60]}...")
         
-        html_content += f"""
-            <tr>
-                <td>{initial_seg}</td>
-                <td>{prf_seg}</td>
-            </tr>
-        """
+        # Get initial retrieval (now includes corpus_data)
+        doc_ids, doc_scores, corpus_data = load_initial_retrieval(
+            query, retriever, config.top_k_rerank
+        )
+        logger.info(f"  Retrieved {len(doc_ids)} documents")
+        qrels_for_query = qrels.get(query_id, {})
+        try:
+            # Generate trajectory for this query
+            trajectory = sim.generate_trajectory(
+                query=query,
+                doc_ids=doc_ids,
+                doc_scores=doc_scores,
+                qrels=qrels_for_query,
+                policy=policy,
+                corpus_data=corpus_data,  # Pass corpus for RerankingAgent
+            )
+            
+            all_trajectories.append(trajectory)
+            logger.info(f"  ✓ Generated trajectory with {len(trajectory)} steps")
+            
+        except Exception as e:
+            logger.error(f"  ✗ Failed to generate trajectory: {e}", exc_info=False)
+            continue
     
-    html_content += """
-        </table>
-    </body>
-    </html>
+    logger.info(f"\n{'='*70}")
+    logger.info(f"Generated {len(all_trajectories)} trajectories")
+    total_steps = sum(len(traj) for traj in all_trajectories)
+    logger.info(f"Total transitions: {total_steps}")
+    logger.info(f"{'='*70}\n")
+    
+    return all_trajectories
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main Entry Point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main(args):
     """
+    Main entry point for offline RL trajectory generation.
+    """
+    logger.info("Starting MAESTRO offline RL trajectory collection...")
     
-    # Write HTML file
-    output_path = Path(__file__).parent.parent / "prf_comparison.html"
-    with open(output_path, 'w', encoding='utf-8') as htmlfile:
-        htmlfile.write(html_content)
+    # ── Step 1: Load data
+    logger.info("\n[Step 1] Loading data...")
     
-    print(f"\nComparative table saved to: {output_path}")
-    print(f"Opening in browser...")
+    # Load qrels
+    qrels_path = Path(args.qrels_path or "notebooks/qrels/trec_rag_2025_qrels.tsv")
+    if not qrels_path.is_absolute():
+        qrels_path = root_path / qrels_path
+    logger.info(f"Loading qrels from: {qrels_path}")
+    qrels = load_qrels(str(qrels_path))
     
-    import webbrowser
-    webbrowser.open(f'file://{output_path.absolute()}')
-
-
-def main():
-    # """Main launcher function."""
-    # import argparse
-
-    # parser = argparse.ArgumentParser(
-    #     description="MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization"
-    # )
-    # parser.add_argument(
-    #     "--mode",
-    #     choices=["demo", "collect"],
-    #     default="demo",
-    #     help="demo: test individual agents; collect: generate trajectories for offline RL",
-    # )
-    # parser.add_argument(
-    #     "--n-trajectories",
-    #     type=int,
-    #     default=100,
-    #     help="Number of trajectories to collect (for --mode collect)",
-    # )
-    # parser.add_argument(
-    #     "--sampling-strategy",
-    #     choices=["random", "stratified", "sequential"],
-    #     default="random",
-    #     help="Query sampling strategy for trajectory collection",
-    # )
-    # parser.add_argument(
-    #     "--output-dir",
-    #     default="trajectories",
-    #     help="Output directory for trajectory files",
-    # )
-
-    # args = parser.parse_args()
-
-    # print("Starting MAESTRO Simulation")
-
-    # # Initialize encoder
-    # print("Loading sentence transformer...")
-    # encoder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-
-    # # Initialize retriever
-    # print("Setting up retriever...")
-    # retriever_instance = Retriever()
-    # retriever_func = create_retriever_callable(retriever_instance)
-
-
-    # # Create agents
-    # print("Creating agents...")
-    # qr_agent = ReformulationAgent(encoder)
-    # rr_agent = RerankingAgent(encoder)
-    # prf_agent = PRFAgent(encoder)
+    # Load queries
+    queries_path = Path(args.queries_path or "notebooks/queries/trec_rag_2025_queries.tsv")
+    if not queries_path.is_absolute():
+        queries_path = root_path / queries_path
+    logger.info(f"Loading queries from: {queries_path}")
+    queries = load_queries(str(queries_path), num_queries=args.num_queries)
     
-    # agents = [qr_agent, rr_agent, prf_agent]
-
-    # # Create simulation
-    # print("Setting up simulation...")
-    # config = SimConfig()
-    # sim = Simulation(
-    #     encoder=encoder,
-    #     retriever=retriever_func,
-    #     agents=agents,
-    #     config=config
-    # )
-
-    # # Mode: demo or collect
-    # if args.mode == "demo":
-    #     _run_demo_mode(sim, qr_agent, rr_agent, prf_agent)
-    # elif args.mode == "collect":
-    #     collect_trajectories_batch(
-    #         retriever_func,
-    #         sim,
-    #         n_trajectories=args.n_trajectories,
-    #         sampling_strategy=args.sampling_strategy,
-    #         output_dir=args.output_dir,
-    #     )
-
-    # print("\nMAESTRO completed successfully!")
-    import pandas as pd
-    from collections import defaultdict
-    import ir_datasets
-
-    dataset = ir_datasets.load("msmarco-passage/train/judged")
-
-    print("Loading query texts...")
-    query_text_map = {}
-    for query in dataset.queries_iter():
-        query_text_map[str(query.query_id)] = query.text
-    print(f"✓ Loaded {len(query_text_map)} query texts")
-
-    print("\nLoading qrels...")
-    qrels_by_query = defaultdict(list)
-    for qrel in dataset.qrels_iter():
-        qrels_by_query[qrel.query_id].append(qrel)
-    print(f"✓ Loaded {len(qrels_by_query)} queries with qrels")
-
-    queries_with_3plus = {
-        qid: qrels for qid, qrels in qrels_by_query.items() if len(qrels) >= 3
-    }
-    print(f"✓ Found {len(queries_with_3plus)} queries with >= 3 qrels")
-
-    csv_data = []
-    for query_id, qrels in queries_with_3plus.items():
-        query_text = query_text_map.get(str(query_id), "")
-        for qrel in qrels:
-            csv_data.append({
-                'query_id':   str(qrel.query_id),
-                'query_text': query_text,
-                'doc_id':     str(qrel.doc_id),
-                'relevance':  int(qrel.relevance),
-                'iteration':  str(getattr(qrel, 'iteration', '0'))
-            })
-
-    df = pd.DataFrame(csv_data)
-    df.to_csv('msmarco_queries_3plus_qrels.csv', index=False, encoding='utf-8')
-    print(f"\n✓ Saved {len(csv_data)} qrels from {len(queries_with_3plus)} queries")
-    print(f"\nQrels per query stats:")
-    print(df.groupby('query_id').size().describe())
-
+    # ── Step 2: Initialize components
+    logger.info("\n[Step 2] Initializing components...")
+    
+    # Load query encoder
+    logger.info("Loading query encoder (all-MiniLM-L6-v2)...")
+    encoder = SentenceTransformer("all-MiniLM-L6-v2")
+    
+    # Initialize BM25 retriever (OpenSearch backend)
+    logger.info("Initializing BM25 retriever (OpenSearch)...")
+    try:
+        retriever_instance = Retriever()
+        retriever = create_retriever_callable(retriever_instance)
+        logger.info("✓ OpenSearch retriever initialized")
+    except Exception as e:
+        logger.warning(f"OpenSearch retriever failed: {e}")
+    
+    # Initialize agents
+    qr_agent = ReformulationAgent(embed_model=encoder)
+    rr_agent = RerankingAgent(embed_model=encoder)
+    prf_agent = PRFAgent(embed_model=encoder, num_expansion_terms=10)
+    agents = [qr_agent, rr_agent, prf_agent]
+    
+    # Create simulation config
+    config = SimConfig(
+        max_steps=args.max_steps,
+        top_k_rerank=args.top_k_rerank,
+        top_k_prf=args.top_k_prf,
+        ndcg_k=args.ndcg_k,
+        recall_k=args.recall_k,
+        reward_alpha=2.0,
+        reward_beta=0.5,
+        reward_gamma=1.0,
+        reward_delta=0.1,
+    )
+    
+    # ── Step 3: Generate trajectories
+    logger.info("\n[Step 3] Generating trajectories...")
+    trajectories = generate_trajectories(
+        config=config,
+        qrels=qrels,
+        queries=queries,
+        encoder=encoder,
+        agents=agents,
+        retriever=retriever,
+        num_trajectories=args.num_trajectories,
+        policy=args.policy,
+    )
+    
+    # ── Step 4: Export to CSV
+    logger.info("\n[Step 4] Exporting trajectories to CSV...")
+    csv_path = Simulation.export_trajectories_to_csv(
+        trajectories,
+        f"trajectories_{args.policy}_{args.num_trajectories}.csv",
+    )
+    logger.info(f"✓ Trajectories exported to {csv_path}")
+    
+    # ── Summary statistics
+    logger.info("\n" + "="*70)
+    logger.info("SUMMARY")
+    logger.info("="*70)
+    logger.info(f"Total trajectories:    {len(trajectories)}")
+    logger.info(f"Total transitions:     {sum(len(t) for t in trajectories)}")
+    logger.info(f"Queries used:          {min(args.num_trajectories, len(queries))}")
+    logger.info(f"Qrels loaded:          {len(qrels)}")
+    logger.info(f"Output file:           {csv_path}")
+    logger.info("="*70 + "\n")
+    
+    logger.info("✓ Pipeline complete! Ready for offline RL training.")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Generate offline RL trajectories for MAESTRO",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    
+    # Data paths
+    parser.add_argument(
+        "--qrels-path",
+        type=str,
+        default="notebooks/qrels/trec_rag_2025_qrels.tsv",
+        help="Path to qrels file",
+    )
+    parser.add_argument(
+        "--queries-path",
+        type=str,
+        default="notebooks/queries/trec_rag_2025_queries.tsv",
+        help="Path to queries file",
+    )
+    
+    # Simulation config
+    parser.add_argument(
+        "--num-trajectories",
+        type=int,
+        default=10,
+        help="Number of trajectories to generate",
+    )
+    parser.add_argument(
+        "--num-queries",
+        type=int,
+        default=None,
+        help="Load only first N queries",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=3,
+        help="Maximum steps per trajectory",
+    )
+    parser.add_argument(
+        "--top-k-rerank",
+        type=int,
+        default=50,
+        help="Top-k for reranking window",
+    )
+    parser.add_argument(
+        "--top-k-prf",
+        type=int,
+        default=10,
+        help="Top-k for PRF term extraction",
+    )
+    parser.add_argument(
+        "--ndcg-k",
+        type=int,
+        default=50,
+        help="NDCG evaluation cutoff",
+    )
+    parser.add_argument(
+        "--recall-k",
+        type=int,
+        default=100,
+        help="Recall evaluation cutoff",
+    )
+    
+    # Policy
+    parser.add_argument(
+        "--policy",
+        type=str,
+        default="random",
+        choices=["random", "expert", "stop"],
+        help="Action selection policy",
+    )
+    
+    args = parser.parse_args()
+    main(args)
