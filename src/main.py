@@ -16,14 +16,17 @@ import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
-
+from d3rlpy.dataset import MDPDataset
+import urllib3
+import logging
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from src.simulation import ACTION_STOP
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Setup path
 src_path = Path(__file__).parent
 root_path = src_path.parent
@@ -154,13 +157,13 @@ def load_initial_retrieval(
 def generate_trajectories(
     config: SimConfig,
     qrels: Dict[str, int],
-    queries: List[str],
+    queries: List[Tuple[str, str]],
     encoder: SentenceTransformer,
     agents: List[AgentBase],
     retriever: callable,
     num_trajectories: int = 100,
     policy: str = "random",
-) -> List[List[Transition]]:
+) -> Tuple[List[List[Transition]], MDPDataset]:
     """
     Generate offline RL trajectories for a set of queries.
     
@@ -170,8 +173,8 @@ def generate_trajectories(
         Simulation configuration
     qrels : Dict[str, int]
         Query relevance judgments {doc_id: grade}
-    queries : List[str]
-        List of query strings
+    queries : List[Tuple[str, str]]
+        List of query IDs and strings
     encoder : SentenceTransformer
         Query encoder
     agents : List[AgentBase]
@@ -187,6 +190,8 @@ def generate_trajectories(
     -------
     List[List[Transition]]
         All generated trajectories
+    MDPDataset
+        Constructed MDP dataset
     """
     logger.info(f"\n{'='*70}")
     logger.info("TRAJECTORY GENERATION PIPELINE")
@@ -206,10 +211,19 @@ def generate_trajectories(
     
     all_trajectories = []
     
+    #Initialize arrays to construct MDP dataset
+    num_episodes = min(num_trajectories, len(queries))
+    max_len = config.max_steps * num_episodes  
+    observations = np.zeros((max_len , config.state_dim), dtype=np.float32)
+    actions      = np.zeros(max_len, dtype=np.int64)    # discrete
+    rewards      = np.zeros(max_len, dtype=np.float32)
+    terminals    = np.zeros(max_len, dtype=np.int64)
+    timeouts = np.zeros(max_len, dtype=np.int64)
+    idx = 0
+
     for traj_id in range(min(num_trajectories, len(queries))):
         query_id,query = queries[traj_id]
         logger.info(f"\n[Trajectory {traj_id+1}/{num_trajectories}] Query: {query[:60]}...")
-        
         # Get initial retrieval (now includes corpus_data)
         doc_ids, doc_scores, corpus_data = load_initial_retrieval(
             query, retriever, config.top_k_rerank
@@ -227,20 +241,45 @@ def generate_trajectories(
                 corpus_data=corpus_data,  # Pass corpus for RerankingAgent
             )
             
+            for step, transition in enumerate(trajectory):
+                is_terminal = transition.action == ACTION_STOP
+                is_timeout = (
+                    step == config.max_steps - 1
+                    and transition.action != ACTION_STOP
+                )
+                observations[idx] = transition.state
+                actions[idx] = transition.action
+                rewards[idx] = transition.reward
+                terminals[idx] = int(is_terminal)
+                timeouts[idx] = int(is_timeout)
+                idx += 1
+            
             all_trajectories.append(trajectory)
             logger.info(f"  ✓ Generated trajectory with {len(trajectory)} steps")
             
         except Exception as e:
             logger.error(f"  ✗ Failed to generate trajectory: {e}", exc_info=False)
             continue
-    
+    # Trim unused tail
+    observations = observations[:idx]
+    actions      = actions[:idx]
+    rewards      = rewards[:idx]
+    terminals    = terminals[:idx]
+    timeouts    = timeouts[:idx]
+    dataset = MDPDataset(
+        observations=observations,
+        actions=actions,
+        rewards=rewards,
+        terminals=terminals,
+        timeouts=timeouts
+    )    
     logger.info(f"\n{'='*70}")
     logger.info(f"Generated {len(all_trajectories)} trajectories")
     total_steps = sum(len(traj) for traj in all_trajectories)
     logger.info(f"Total transitions: {total_steps}")
     logger.info(f"{'='*70}\n")
     
-    return all_trajectories
+    return all_trajectories, dataset
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -289,7 +328,7 @@ def main(args):
     # Initialize agents
     qr_agent = ReformulationAgent(embed_model=encoder)
     rr_agent = RerankingAgent(embed_model=encoder)
-    prf_agent = PRFAgent(embed_model=encoder, num_expansion_terms=10)
+    prf_agent = PRFAgent(embed_model=encoder, num_expansion_terms=5)
     agents = [qr_agent, rr_agent, prf_agent]
     
     # Create simulation config
@@ -302,12 +341,12 @@ def main(args):
         reward_alpha=2.0,
         reward_beta=0.5,
         reward_gamma=1.0,
-        reward_delta=0.1,
+        reward_delta=0.5,
     )
     
     # ── Step 3: Generate trajectories
     logger.info("\n[Step 3] Generating trajectories...")
-    trajectories = generate_trajectories(
+    trajectories, mdp_dataset = generate_trajectories(
         config=config,
         qrels=qrels,
         queries=queries,
@@ -339,6 +378,8 @@ def main(args):
     
     logger.info("✓ Pipeline complete! Ready for offline RL training.")
 
+    #Save the generated MDP dataset to a file for later use 
+    mdp_dataset.dump("mdp_dataset.h5")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -409,7 +450,7 @@ if __name__ == "__main__":
         "--policy",
         type=str,
         default="random",
-        choices=["random", "expert", "stop"],
+        choices=["random", "expert", "stop", "prf"],
         help="Action selection policy",
     )
     

@@ -1,0 +1,31 @@
+trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
+0,0,what is pcnt,what is pcnt mla,2,PseudoRelevanceFeedback,-0.932588,False,1.000000,0.630930,1.000000,1.000000,0.000000,0.000000,3888.95,3888.95
+0,1,what is pcnt mla,what is pcnt mla viewed,2,PseudoRelevanceFeedback,0.244357,False,0.630930,1.000000,1.000000,1.000000,0.000000,0.000000,9875.67,13764.62
+0,2,what is pcnt mla viewed,what is pcnt mla viewed web,2,PseudoRelevanceFeedback,-0.337440,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,6748.81,20513.43
+1,0,how long is a college hockey game,how long is a college hockey game period,2,PseudoRelevanceFeedback,-0.084404,False,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,1688.08,1688.08
+1,1,how long is a college hockey game period,how long is a college hockey game period ice,2,PseudoRelevanceFeedback,-0.338242,False,0.630930,0.500000,1.000000,1.000000,0.000000,0.000000,1527.65,3215.73
+1,2,how long is a college hockey game period ice,how long is a college hockey game period ice nhl,2,PseudoRelevanceFeedback,-0.576124,True,0.500000,0.270238,1.000000,1.000000,0.000000,0.000000,2332.01,5547.74
+2,0,what is pastoral medicine,what is pastoral medicine health,2,PseudoRelevanceFeedback,0.014395,False,0.430677,0.500000,1.000000,1.000000,0.000000,0.000000,2485.04,2485.04
+2,1,what is pastoral medicine health,what is pastoral medicine health medical,2,PseudoRelevanceFeedback,-1.082325,False,0.500000,0.430677,1.000000,1.000000,0.000000,0.000000,18873.57,21358.60
+2,2,what is pastoral medicine health medical,what is pastoral medicine health medical science,2,PseudoRelevanceFeedback,0.058234,True,0.430677,0.630930,1.000000,1.000000,0.000000,0.000000,6845.45,28204.05
+3,0,what is ownership of a corporation called,what is ownership of a corporation called stock,2,PseudoRelevanceFeedback,-0.248441,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,4968.82,4968.82
+3,1,what is ownership of a corporation called stock,what is ownership of a corporation called stock common,2,PseudoRelevanceFeedback,-0.427185,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,8543.70,13512.53
+3,2,what is ownership of a corporation called stock common,what is ownership of a corporation called stock common company,2,PseudoRelevanceFeedback,-0.301556,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,6031.13,19543.66
+4,0,what is prevail,what is prevail likes,2,PseudoRelevanceFeedback,-0.188845,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,3776.89,3776.89
+4,1,what is prevail likes,what is prevail likes like,2,PseudoRelevanceFeedback,-0.177838,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,3556.76,7333.66
+4,2,what is prevail likes like,what is prevail likes like tags,2,PseudoRelevanceFeedback,-0.105120,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,2102.39,9436.05
+5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting? predetermined,2,PseudoRelevanceFeedback,0.841351,False,0.000000,0.205847,0.000000,1.000000,0.000000,0.000000,1406.86,1406.86
+5,1,what is overhead rate in managerial accounting? predetermined,what is overhead rate in managerial accounting? predetermined costs,2,PseudoRelevanceFeedback,-0.026835,False,0.205847,0.235409,1.000000,1.000000,0.000000,0.000000,1719.19,3126.05
+5,2,what is overhead rate in managerial accounting? predetermined costs,what is overhead rate in managerial accounting? predetermined costs manufacturing,2,PseudoRelevanceFeedback,-1.111646,True,0.235409,0.000000,1.000000,0.000000,0.000000,0.000000,2816.56,5942.61
+6,0,what is price of pressure treated lumber 2x6x8,what is price of pressure treated lumber 2x6x8 cart,2,PseudoRelevanceFeedback,-2.139647,False,0.356207,0.000000,1.000000,0.000000,0.000000,0.000000,18544.66,18544.66
+6,1,what is price of pressure treated lumber 2x6x8 cart,what is price of pressure treated lumber 2x6x8 cart ground,2,PseudoRelevanceFeedback,-0.295840,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,5916.81,24461.47
+6,2,what is price of pressure treated lumber 2x6x8 cart ground,what is price of pressure treated lumber 2x6x8 cart ground premium,2,PseudoRelevanceFeedback,-0.151507,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,3030.15,27491.62
+7,0,what is outlook data file,what is outlook data file delete,2,PseudoRelevanceFeedback,-1.397665,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,27953.29,27953.29
+7,1,what is outlook data file delete,what is outlook data file delete ost,2,PseudoRelevanceFeedback,-0.107044,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,2140.88,30094.17
+7,2,what is outlook data file delete ost,what is outlook data file delete ost error,2,PseudoRelevanceFeedback,-0.314160,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,6283.19,36377.36
+8,0,how long is a flight from chicago to australia,how long is a flight from chicago to australia york,2,PseudoRelevanceFeedback,-1.409355,False,1.000000,0.333333,1.000000,1.000000,0.000000,0.000000,1520.42,1520.42
+8,1,how long is a flight from chicago to australia york,how long is a flight from chicago to australia york minutes,2,PseudoRelevanceFeedback,0.125212,False,0.333333,0.430677,1.000000,1.000000,0.000000,0.000000,1389.48,2909.90
+8,2,how long is a flight from chicago to australia york minutes,how long is a flight from chicago to australia york minutes hours,2,PseudoRelevanceFeedback,-0.331671,True,0.430677,0.301030,1.000000,1.000000,0.000000,0.000000,1447.57,4357.47
+9,0,what is ott media,what is ott media broadcasting,2,PseudoRelevanceFeedback,-1.088937,False,0.218104,0.000000,1.000000,0.000000,0.000000,0.000000,3054.57,3054.57
+9,1,what is ott media broadcasting,what is ott media broadcasting vimeo,2,PseudoRelevanceFeedback,-0.270668,False,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,5413.37,8467.94
+9,2,what is ott media broadcasting vimeo,what is ott media broadcasting vimeo delivery,2,PseudoRelevanceFeedback,-0.289329,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,5786.57,14254.51

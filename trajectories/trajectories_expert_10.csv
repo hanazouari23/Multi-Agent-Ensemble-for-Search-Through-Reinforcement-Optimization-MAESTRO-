@@ -1,19 +1,19 @@
 trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
-0,0,what is pcnt,what is pcnt,3,STOP,-0.100000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-1,0,how long is a college hockey game,How long is a college hockey game?,0,QueryReform,-0.100007,False,0.630930,0.630930,1.000000,1.000000,0.000007,0.000007,1801.61,1801.61
-1,1,How long is a college hockey game?,How long is a college hockey game?,1,Rerank,0.638140,False,0.630930,1.000000,1.000000,1.000000,0.000000,0.000007,1885.29,3686.90
-1,2,How long is a college hockey game?,How long is a college hockey game?,3,STOP,-0.100000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000007,0.00,3686.90
-2,0,what is pastoral medicine,what is pastoral medicine,1,Rerank,0.038647,False,0.430677,0.500000,1.000000,1.000000,0.000000,0.000000,2886.64,2886.64
-2,1,what is pastoral medicine,what is pastoral medicine,3,STOP,-0.100000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,2886.64
-3,0,what is ownership of a corporation called,what is ownership of a corporation called,3,STOP,-0.100000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-4,0,what is prevail,what is prevail,3,STOP,-0.100000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,2,PseudoRelevanceFeedback,0.836209,False,0.000000,0.218104,0.000000,1.000000,0.000000,0.000000,2384.42,2384.42
-5,1,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,1,Rerank,-0.110716,False,0.218104,0.212746,1.000000,1.000000,0.000000,0.000000,2307.53,4691.94
-5,2,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,"What is the overhead rate in managerial accounting, specifically the predetermined overhead rate used for costing based on machine hours or direct labor hours in a manufacturing company?",0,QueryReform,0.335846,True,0.212746,0.430677,1.000000,1.000000,0.000015,0.000015,21897.89,26589.84
-6,0,what is price of pressure treated lumber 2x6x8,What is the current price of a 2x6x8 pressure treated lumber board?,0,QueryReform,-0.145759,False,0.356207,0.333333,1.000000,1.000000,0.000011,0.000011,2594.10,2594.10
-6,1,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,1,Rerank,1.233333,False,0.333333,1.000000,1.000000,1.000000,0.000000,0.000011,3380.29,5974.40
-6,2,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,3,STOP,-0.100000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000011,0.00,5974.40
-7,0,what is outlook data file,what is outlook data file,3,STOP,-0.100000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-8,0,how long is a flight from chicago to australia,how long is a flight from chicago to australia,3,STOP,-0.100000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-9,0,what is ott media,what is ott media,1,Rerank,0.463791,False,0.218104,0.500000,1.000000,1.000000,0.000000,0.000000,2075.98,2075.98
-9,1,what is ott media,what is ott media,3,STOP,-0.100000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,2075.98
+0,0,what is pcnt,what is pcnt,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+1,0,how long is a college hockey game,how long is a college hockey game,1,Rerank,0.599824,False,0.630930,1.000000,1.000000,1.000000,0.300000,0.300000,2349.51,2349.51
+1,1,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.300000,0.00,2349.51
+2,0,what is pastoral medicine,what is pastoral medicine,1,Rerank,-0.023253,False,0.430677,0.500000,1.000000,1.000000,0.300000,0.300000,3056.99,3056.99
+2,1,what is pastoral medicine,"What is pastoral medicine, including its definition, scope, and key principles?",0,QueryReform,0.587343,False,0.500000,1.000000,1.000000,1.000000,1.000000,1.300000,6379.72,9436.71
+2,2,"What is pastoral medicine, including its definition, scope, and key principles?","What is pastoral medicine, including its definition, scope, and key principles?",3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,1.300000,0.00,9436.71
+3,0,what is ownership of a corporation called,what is ownership of a corporation called,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+4,0,what is prevail,what is prevail,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting? predetermined,2,PseudoRelevanceFeedback,-0.100043,False,0.000000,0.000000,0.000000,0.000000,0.300000,0.300000,1201.28,1201.28
+5,1,what is overhead rate in managerial accounting? predetermined,What is the predetermined overhead rate in managerial accounting and how is it calculated?,0,QueryReform,1.265082,False,0.000000,0.250000,0.000000,1.000000,1.000000,1.300000,1047.54,2248.82
+5,2,What is the predetermined overhead rate in managerial accounting and how is it calculated?,What is the predetermined overhead rate in managerial accounting and how is it calculated? manufacturing,2,PseudoRelevanceFeedback,-0.002916,True,0.250000,0.301030,1.000000,1.000000,0.300000,1.600000,1349.29,3598.11
+6,0,what is price of pressure treated lumber 2x6x8,What is the current price of a 2x6x8 pressure treated lumber board?,0,QueryReform,-0.286179,False,0.356207,0.333333,1.000000,1.000000,1.000000,1.000000,1212.94,1212.94
+6,1,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,1,Rerank,1.177407,False,0.333333,1.000000,1.000000,1.000000,0.300000,1.300000,2877.80,4090.74
+6,2,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,1.300000,0.00,4090.74
+7,0,what is outlook data file,what is outlook data file,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
+8,0,how long is a flight from chicago to australia,how long is a flight from chicago to australia,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+9,0,what is ott media,what is ott media,1,Rerank,0.423516,False,0.218104,0.500000,1.000000,1.000000,0.300000,0.300000,2408.25,2408.25
+9,1,what is ott media,what is ott media,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.300000,0.00,2408.25

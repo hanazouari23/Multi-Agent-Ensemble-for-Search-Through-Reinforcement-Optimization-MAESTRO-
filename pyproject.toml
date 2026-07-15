@@ -24,6 +24,7 @@ ir-datasets = "^0.5.11"
 matplotlib = "^3.10.9"
 pandas = "^3.0.3"
 dotenv = "^0.9.9"
+d3rlpy = "^2.8.1"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

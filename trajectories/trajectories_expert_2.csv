@@ -1,0 +1,4 @@
+trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
+0,0,what is pcnt,what is pcnt,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+1,0,how long is a college hockey game,how long is a college hockey game,1,Rerank,0.443075,False,0.630930,1.000000,1.000000,1.000000,0.300000,0.300000,2184.82,2184.82
+1,1,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.300000,0.00,2184.82

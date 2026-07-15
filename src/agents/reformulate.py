@@ -52,7 +52,7 @@ class ReformulationAgent(AgentBase):
         
         # 1. Reformulate query with LLM
         start_time = time.time()
-        reformulated_query, llm_cost = self._call_llm(original_query)
+        reformulated_query = self._call_llm(original_query)
         reformulation_time = time.time() - start_time
         
         # 2. Retrieve new documents with reformulated query
@@ -71,7 +71,7 @@ class ReformulationAgent(AgentBase):
             'new_doc_ids': new_doc_ids,
             'new_doc_scores': new_doc_scores,
             'elapsed_time': total_elapsed,
-            'cost': llm_cost
+            'cost': 1.0  # Assuming a fixed cost for the LLM call; adjust as needed
         }
     
     def _call_llm(self, query: str) -> str:
@@ -89,10 +89,5 @@ class ReformulationAgent(AgentBase):
         if content is None:
             raise RuntimeError("No content returned from LLM")
         content = content.strip()
-
-        # Extract token usage and calculate cost
-        input_tokens = response.usage.prompt_tokens
-        output_tokens = response.usage.completion_tokens
-        # Assuming cost: $0.0001 per 1k input tokens, $0.0003 per 1k output tokens
-        cost = (input_tokens / 1000) * 0.0001 + (output_tokens / 1000) * 0.0003
-        return content, cost
+       
+        return content

@@ -1,26 +1,37 @@
 trajectory_id,step,query,new_query,action,action_name,reward,done,ndcg_before,ndcg_after,recall_before,recall_after,cost,cum_cost,elapsed_ms,cum_elapsed_ms
 0,0,what is pcnt,what is pcnt,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-1,0,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-2,0,what is pastoral medicine,"What is pastoral medicine, including its definition, scope, and relationship to healthcare and spiritual care?",0,QueryReform,1.038636,False,0.430677,1.000000,1.000000,1.000000,0.000010,0.000010,27612.53,27612.53
-2,1,"What is pastoral medicine, including its definition, scope, and relationship to healthcare and spiritual care?","What is pastoral medicine, including its definition, scope, and relationship to healthcare and spiritual care?",3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000010,0.00,27612.53
+1,0,how long is a college hockey game,how long is a college hockey game,1,Rerank,0.644276,False,0.630930,1.000000,1.000000,1.000000,0.000000,0.000000,1877.28,1877.28
+1,1,how long is a college hockey game,how long is a college hockey game,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,1877.28
+2,0,what is pastoral medicine,What is pastoral medicine?,0,QueryReform,-0.053201,False,0.430677,0.430677,1.000000,1.000000,0.006200,0.006200,940.02,940.02
+2,1,What is pastoral medicine?,What is pastoral medicine?,1,Rerank,-0.004160,False,0.430677,0.500000,1.000000,1.000000,0.000000,0.006200,2856.14,3796.16
+2,2,What is pastoral medicine?,"What is pastoral medicine, including its definition, scope, and role in healthcare?",0,QueryReform,0.576759,True,0.500000,1.000000,1.000000,1.000000,0.009600,0.015800,8272.82,12068.98
 3,0,what is ownership of a corporation called,what is ownership of a corporation called,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
 4,0,what is prevail,what is prevail,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,2,PseudoRelevanceFeedback,0.836209,False,0.000000,0.218104,0.000000,1.000000,0.000000,0.000000,14519.26,14519.26
-5,1,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,1,Rerank,0.094721,False,0.218104,0.315465,1.000000,1.000000,0.000000,0.000000,99.42,14618.68
-5,2,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000,what is overhead rate in managerial accounting? accounting predetermined cost costs costing company hours based machine 000 direct labor manufacturing job calculate activity allocation year actual hour,2,PseudoRelevanceFeedback,-0.064263,False,0.315465,0.333333,1.000000,1.000000,0.000000,0.000000,8942.48,23561.16
-6,0,what is price of pressure treated lumber 2x6x8,what is price of pressure treated lumber 2x6x8,3,STOP,0.000000,True,0.356207,0.356207,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+5,0,what is overhead rate in managerial accounting?,what is overhead rate in managerial accounting? predetermined,2,PseudoRelevanceFeedback,0.850301,False,0.000000,0.205847,0.000000,1.000000,0.000000,0.000000,1227.86,1227.86
+5,1,what is overhead rate in managerial accounting? predetermined,what is overhead rate in managerial accounting? predetermined,1,Rerank,-0.058130,False,0.205847,0.235409,1.000000,1.000000,0.000000,0.000000,2345.08,3572.94
+5,2,what is overhead rate in managerial accounting? predetermined,What is the predetermined overhead rate in managerial accounting and how is it calculated?,0,QueryReform,-0.030078,True,0.235409,0.250000,1.000000,1.000000,0.009700,0.009700,991.19,4564.14
+6,0,what is price of pressure treated lumber 2x6x8,What is the current price of a 2x6x8 pressure treated lumber board?,0,QueryReform,-0.114439,False,0.356207,0.333333,1.000000,1.000000,0.011000,0.011000,1153.82,1153.82
+6,1,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,1,Rerank,1.195618,False,0.333333,1.000000,1.000000,1.000000,0.000000,0.011000,2754.31,3908.13
+6,2,What is the current price of a 2x6x8 pressure treated lumber board?,What is the current price of a 2x6x8 pressure treated lumber board?,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.011000,0.00,3908.13
 7,0,what is outlook data file,what is outlook data file,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
 8,0,how long is a flight from chicago to australia,how long is a flight from chicago to australia,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-9,0,what is ott media,what is ott media,1,Rerank,0.463791,False,0.218104,0.500000,1.000000,1.000000,0.000000,0.000000,41.06,41.06
-9,1,what is ott media,what is ott media,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,41.06
+9,0,what is ott media,What is OTT media?,0,QueryReform,-0.059263,False,0.218104,0.218104,1.000000,1.000000,0.006500,0.006500,1055.25,1055.25
+9,1,What is OTT media?,What is OTT media?,1,Rerank,0.452344,False,0.218104,0.500000,1.000000,1.000000,0.000000,0.006500,2228.94,3284.20
+9,2,What is OTT media?,What is OTT media?,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.006500,0.00,3284.20
 10,0,what is organic insomnia,what is organic insomnia,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-11,0,what is oprah winfrey's net wo,what is oprah winfrey's net wo,3,STOP,0.000000,True,0.500000,0.500000,1.000000,1.000000,0.000000,0.000000,0.00,0.00
-12,0,trending topic meaning,trending topic meaning,3,STOP,0.000000,True,0.301030,0.301030,1.000000,1.000000,0.000000,0.000000,0.00,0.00
+11,0,what is oprah winfrey's net wo,What is Oprah Winfrey's net worth?,0,QueryReform,-0.413154,False,0.500000,0.500000,1.000000,1.000000,0.008500,0.008500,8093.07,8093.07
+11,1,What is Oprah Winfrey's net worth?,What is Oprah Winfrey's net worth?,1,Rerank,0.120366,False,0.500000,0.630930,1.000000,1.000000,0.000000,0.008500,2829.88,10922.95
+11,2,What is Oprah Winfrey's net worth?,What is Oprah Winfrey's net worth?,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.008500,0.00,10922.95
+12,0,trending topic meaning,trending topic meaning,1,Rerank,1.257806,False,0.301030,1.000000,1.000000,1.000000,0.000000,0.000000,2802.68,2802.68
+12,1,trending topic meaning,trending topic meaning,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,2802.68
 13,0,who produced transformers,who produced transformers,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
 14,0,trilobites definition,trilobites definition,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-15,0,triptans minimum age,triptans minimum age for use,0,QueryReform,0.161853,False,0.500000,0.630930,1.000000,1.000000,0.000007,0.000007,2510.17,2510.17
-15,1,triptans minimum age for use,triptans minimum age for use,3,STOP,0.000000,True,0.630930,0.630930,1.000000,1.000000,0.000000,0.000007,0.00,2510.17
+15,0,triptans minimum age,What is the minimum age for using triptans?,0,QueryReform,0.067873,False,0.500000,0.630930,1.000000,1.000000,0.008100,0.008100,3717.72,3717.72
+15,1,What is the minimum age for using triptans?,What is the minimum age for using triptans?,1,Rerank,0.629881,False,0.630930,1.000000,1.000000,1.000000,0.000000,0.008100,2165.19,5882.92
+15,2,What is the minimum age for using triptans?,What is the minimum age for using triptans?,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.008100,0.00,5882.92
 16,0,when do the oscar awards start,when do the oscar awards start,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
-17,0,tsa wages and benefits,tsa wages and benefits,3,STOP,0.000000,True,0.613147,0.613147,0.500000,0.500000,0.000000,0.000000,0.00,0.00
+17,0,tsa wages and benefits,TSA wages and benefits,0,QueryReform,-0.275880,False,0.613147,0.613147,0.500000,0.500000,0.006300,0.006300,5391.60,5391.60
+17,1,TSA wages and benefits,TSA wages and benefits,1,Rerank,-0.594156,False,0.613147,0.386853,0.500000,0.500000,0.000000,0.006300,2831.35,8222.95
+17,2,TSA wages and benefits,TSA wages and benefits salary,2,PseudoRelevanceFeedback,0.969409,True,0.386853,0.774190,0.500000,1.000000,0.000000,0.006300,1105.32,9328.27
 18,0,how long is a zip code,how long is a zip code,3,STOP,0.000000,True,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.00,0.00
 19,0,average settlement for hearing damage and loss,average settlement for hearing damage and loss,3,STOP,0.000000,True,1.000000,1.000000,1.000000,1.000000,0.000000,0.000000,0.00,0.00

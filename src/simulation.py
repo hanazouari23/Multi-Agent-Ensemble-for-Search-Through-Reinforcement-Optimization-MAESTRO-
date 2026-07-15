@@ -55,11 +55,11 @@ class SimConfig:
     # Reward weights:   r = α·ΔNDCG + β·ΔRecall − γ·cost − δ·step_penalty
     reward_alpha: float = 2.0   # ΔNDCG@k weight
     reward_beta:  float = 0.5   # ΔRecall@k weight
-    reward_gamma: float = 1.0   # cost penalty weight
-    reward_delta: float = 0.1   # step penalty (non-terminal only)
+    reward_gamma: float = 0.2   # cost penalty weight
+    reward_delta: float = 0.1   # latency penalty 
 
     # Elapsed-time normalisation divisor (ms). Divide raw ms by this.
-    elapsed_time_norm: float = 10_000.0
+    elapsed_time_norm: float = 3000.0
 
     # Data paths
     qrels_path: Optional[str] = None      # Path to qrels file {doc_id: relevance_grade}
@@ -188,26 +188,18 @@ class Simulation:
         return len(set(ranked_docs) & relevant) / len(relevant)
  
     @staticmethod
-    def _valid_actions_mask(agents_used: List[bool]) -> List[int]:
+    def _valid_actions_mask(agents_used: List[bool], current_ndcg: float) -> List[int]:
         """
         Compute which actions are currently available.
-
-        An agent action is invalid if it was the last action taken (no consecutive calls).
-        agents_used is a one-hot encoding of the last action taken:
-          - [True, False, False]  → last action was QR, so QR is invalid
-          - [False, True, False]  → last action was RR, so RR is invalid
-          - [False, False, True]  → last action was PRF, so PRF is invalid
-          - [False, False, False] → no previous action or STOP was chosen, all valid
-        STOP is always valid (action index 3).
 
         Returns
         -------
         List[int]  – binary mask of length 4: [qr, rr, prf, stop]
         """
         return [
-            int(not agents_used[0]),   # QR valid if last action was NOT QR
-            int(not agents_used[1]),   # RR valid if last action was NOT RR
-            int(not agents_used[2]),   # PRF valid if last action was NOT PRF
+            int(current_ndcg < 1),   # QR valid if ndcg < 1
+            int(current_ndcg > 0 and current_ndcg < 1),   # RR valid if ndcg in [0, 1]
+            int(current_ndcg < 1),   # PRF valid if ndcg < 1
             1,                          # STOP always available
         ]
 
@@ -230,6 +222,7 @@ class Simulation:
         doc_scores:   np.ndarray,
         step:         int,
         agents_used:  List[bool],
+        current_ndcg: float,
         ndcg_change:  float = 0.0,
         recall_change: float = 0.0,
         elapsed_ms:   float = 0.0,
@@ -301,7 +294,7 @@ class Simulation:
 
         # ── Valid-action mask
         valid_mask = np.array(
-            self._valid_actions_mask(agents_used), dtype=np.float32
+            self._valid_actions_mask(agents_used, current_ndcg), dtype=np.float32
         )
 
         state = np.concatenate([
@@ -349,7 +342,7 @@ class Simulation:
         new_query      : (possibly reformulated) query string
         new_doc_ids    : updated ranked document list
         new_doc_scores : updated scores
-        metrics        : {"ndcg": float, "recall": float, "satisfaction": float}
+        metrics        : {"ndcg": float, "recall": float}
         elapsed_ms     : wall-clock time taken by this agent call (ms)
         """
         t0 = time.perf_counter()
@@ -388,8 +381,8 @@ class Simulation:
         new_query = effects.get('new_query_text', query)
         new_doc_ids = effects.get('new_doc_ids', doc_ids)
         new_doc_scores = effects.get('new_doc_scores', doc_scores)
-        elapsed_ms = effects.get('elapsed_time', 0.0) * 1_000.0  # Convert to ms
-        cost = effects.get('cost', 0.0)  # Agent-calculated cost
+        elapsed_ms = effects.get('elapsed_time', 0.0) * 1000.0  # Convert to ms
+        cost = effects.get('cost')  # Agent-calculated cost
         
         # Compute metrics on the new results
         metrics = {
@@ -417,17 +410,39 @@ class Simulation:
 
         where:
             Δx           = x_after − x_before  (change due to this action)
-            sat          = click-DCG satisfaction proxy from ORCAS
             cost(a)      = cost returned by agent (e.g., token count for QueryReform)
-            step_penalty = reward_delta on non-terminal steps, 0 on terminal
         """
         cfg = self.cfg
-        return float(
-            cfg.reward_alpha * (ndcg_after   - ndcg_before)
-            + cfg.reward_beta  * (recall_after - recall_before)
-            - cfg.reward_gamma * action_cost
-            - cfg.reward_delta
-        )
+        ndcg_gain = ndcg_after - ndcg_before
+        recall_gain = recall_after - recall_before
+        quality_reward = cfg.reward_alpha * ndcg_gain
+        recall_reward = cfg.reward_beta * recall_gain
+        cost_penalty = 0.2 * action_cost
+        time_penalty = 0.1 * (elapsed_ms / cfg.elapsed_time_norm)
+        print(
+            "reward action=%s: ndcg=%+.6f, recall=%+.6f, "
+            "quality=%+.6f, recall_term=%+.6f, "
+            "cost=-%.6f, time=-%.6f, total=%+.6f","elapsed_ms=%.2f", "action_cost=%.6f",
+            ACTION_NAMES[action],
+            ndcg_gain,
+            recall_gain,
+            quality_reward,
+            recall_reward,
+            time_penalty,
+            cost_penalty,
+            elapsed_ms/cfg.elapsed_time_norm,
+            action_cost,
+       )
+        if action == ACTION_STOP:
+             return float(0.0)
+        else:
+              return float(
+             2 * (ndcg_after   - ndcg_before)
+            + 1  * (recall_after - recall_before)
+            - (0.2 * action_cost)
+            - 0.1 * (elapsed_ms / cfg.elapsed_time_norm)
+            )
+        
 
     # ── 4. generate_trajectory ────────────────────────────────────────────────
     def generate_trajectory(
@@ -466,16 +481,15 @@ class Simulation:
         for step in range(cfg.max_steps):
             state = self.build_state(
                 cur_query, cur_ids, cur_scores,
-                step, agents_used,
+                step, agents_used, baseline_ndcg,
                 cum_ndcg_change, cum_recall_change,
                 cum_elapsed_ms, cum_cost,
-                query_length=query_length, query_emb=query_emb,
-            )
+                query_length=query_length, query_emb=query_emb)
 
             ndcg_before = Simulation.compute_ndcg(cur_ids, qrels, cfg.ndcg_k)
             recall_before = Simulation.compute_recall(cur_ids, qrels, cfg.recall_k)
 
-            valid = self._valid_actions_mask(agents_used)
+            valid = self._valid_actions_mask(agents_used, ndcg_before)
 
             if policy == "expert":
                 action, effects = self._policy_expert_two_step(
@@ -529,7 +543,7 @@ class Simulation:
 
             next_state = self.build_state(
                 new_query, new_ids, new_scores,
-                step + 1, agents_used,
+                step + 1, agents_used, ndcg_after,
                 cum_ndcg_change, cum_recall_change,
                 cum_elapsed_ms, cum_cost,
                 query_length=query_length, query_emb=query_emb,
@@ -584,7 +598,10 @@ class Simulation:
                 return self._policy_expert(query, doc_ids, doc_scores, qrels, valid)
             if policy == "stop":
                 return ACTION_STOP
+            if policy == "prf":
+                return ACTION_PRF
             raise ValueError(f"Unknown policy: {policy!r}. Choose 'random', 'expert', or 'stop'.")
+            
 
     def _policy_random(self, valid: List[int]) -> int:
             """
@@ -735,7 +752,7 @@ class Simulation:
                 else:
                     agents_used_2 = [False, False, True]
 
-                valid2 = self._valid_actions_mask(agents_used_2)
+                valid2 = self._valid_actions_mask(agents_used_2, best_after_action1)
 
                 for action2 in range(N_AGENTS):
                     if not valid2[action2]:

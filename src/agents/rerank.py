@@ -64,4 +64,5 @@ class RerankingAgent(AgentBase):
             'new_doc_ids': new_doc_ids,
             'new_doc_scores': new_doc_scores,
             'elapsed_time': elapsed_time,
+            'cost': 0.3
         }
