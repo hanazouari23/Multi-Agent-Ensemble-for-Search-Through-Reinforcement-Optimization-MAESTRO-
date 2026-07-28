@@ -72,15 +72,15 @@ class SimConfig:
     # │ [1:385]   query_embedding  384                                        │
     # │ [385]     score_spread     1                                          │
     # │ [386]     score_entropy    1                                          │
-    # │ [387:390] agents_used      3                                          │
-    # │ [390]     step             1                                          │
-    # │ [391]     ndcg_change      1                                          │
-    # │ [392]     recall_change    1                                          │
+    # │ [387:390] last_action      3  (one-hot: QR, RR, PRF)                  │
+    # │ [390]     step             1  (normalised)                            │
+    # │ [391]     rank_overlap     1  (Jaccard with previous top-k)           │
+    # │ [392]     query_drift      1  (cosine distance from original query)   │
     # │ [393]     elapsed_time     1  (normalised)                            │
     # │ [394]     cost             1  (cumulative)                            │
     # │ [395:399] valid_actions    4                                          │
-    # │ Total = 1+384+1+1+3+1+1+1+1+1+4 = 399                              │
-    # └──────────────────────────────────────────────────────────────────────┘
+    # │ Total = 1+384+1+1+3+1+1+1+1+1+4 = 399                                 │
+    # └───────────────────────────────────────────────────────────────────────┘
     state_dim: int = 399
 
 
@@ -188,19 +188,27 @@ class Simulation:
         return len(set(ranked_docs) & relevant) / len(relevant)
  
     @staticmethod
-    def _valid_actions_mask(agents_used: List[bool], current_ndcg: float) -> List[int]:
+    def _valid_actions_mask(last_action_agent: List[bool]) -> List[int]:
         """
         Compute which actions are currently available.
+
+        The mask is qrel-agnostic: it only prevents the same agent from being
+        used twice in a row. STOP is always available.
+
+        Parameters
+        ----------
+        last_action_agent : List[bool]
+            One-hot vector [last_was_qr, last_was_rr, last_was_prf].
 
         Returns
         -------
         List[int]  – binary mask of length 4: [qr, rr, prf, stop]
         """
         return [
-            int(current_ndcg < 1),   # QR valid if ndcg < 1
-            int(current_ndcg > 0 and current_ndcg < 1),   # RR valid if ndcg in [0, 1]
-            int(current_ndcg < 1),   # PRF valid if ndcg < 1
-            1,                          # STOP always available
+            int(not last_action_agent[0]),  # QR valid if not last QR
+            int(not last_action_agent[1]),  # RR valid if not last RR
+            int(not last_action_agent[2]),  # PRF valid if not last PRF
+            1,                              # STOP always available
         ]
 
     @staticmethod
@@ -214,106 +222,167 @@ class Simulation:
         probs = softmax(scores.astype(float))
         return float(scipy_entropy(probs))
 
+    @staticmethod
+    def _rank_overlap(
+        previous_docids: Optional[List[str]],
+        current_docids: List[str],
+        k: int = 50,
+    ) -> np.float32:
+        """
+        Jaccard overlap of the previous and current top-k result sets.
+
+        Returns 0.0 at the first state because no previous ranking exists.
+        """
+        if previous_docids is None:
+            return np.float32(0.0)
+
+        previous = {
+            Simulation.normalize_doc_id(docid)
+            for docid in previous_docids[:k]
+        }
+        current = {
+            Simulation.normalize_doc_id(docid)
+            for docid in current_docids[:k]
+        }
+
+        union = previous | current
+        if not union:
+            return np.float32(0.0)
+
+        return np.float32(len(previous & current) / len(union))
+
+
+    @staticmethod
+    def _query_drift(
+        original_query_embedding: np.ndarray,
+        current_query_embedding: np.ndarray,
+    ) -> np.float32:
+        """
+        Cosine distance from the original query embedding.
+
+        0.0 means the current query has not changed semantically.
+        Larger values indicate greater semantic drift.
+        """
+        original = np.asarray(original_query_embedding, dtype=np.float32)
+        current = np.asarray(current_query_embedding, dtype=np.float32)
+
+        denominator = np.linalg.norm(original) * np.linalg.norm(current)
+        if denominator <= 1e-12:
+            return np.float32(0.0)
+
+        cosine_similarity = np.dot(original, current) / denominator
+        cosine_similarity = np.clip(cosine_similarity, -1.0, 1.0)
+
+        return np.float32(1.0 - cosine_similarity)
     # ── 1. build_state ────────────────────────────────────────────────────────
     def build_state(
         self,
-        query:        str,
-        doc_ids:      List[str],
-        doc_scores:   np.ndarray,
-        step:         int,
-        agents_used:  List[bool],
-        current_ndcg: float,
-        ndcg_change:  float = 0.0,
-        recall_change: float = 0.0,
-        elapsed_ms:   float = 0.0,
-        cum_cost:     float = 0.0,
+        query: str,
+        docids: List[str],
+        docscores: np.ndarray,
+        step: int,
+        last_action_agent: List[bool],
+        previous_docids: Optional[List[str]],
+        original_query_embedding: np.ndarray,
+        elapsed_ms: float = 0.0,
+        cumulative_cost: float = 0.0,
         query_length: Optional[np.ndarray] = None,
-        query_emb:    Optional[np.ndarray] = None,
+        query_embedding: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
-        Assemble the full state vector for the current MDP step.
+        Build the 399-dimensional observable policy state.
 
-        State layout (dim = 399):
-            [0]       query_length     word token count (invariant across episode)
-            [1:385]   query_embedding  384-d float32 (invariant across episode)
-            [385]     score_spread     std(top-k scores)
-            [386]     score_entropy    H(softmax(scores))
-            [387:390] agents_used      one-hot [last_was_qr, last_was_rr, last_was_prf]
-            [390]     step             normalised  step / max_steps
-            [391]     ndcg_change      ΔNDCG@k vs episode baseline
-            [392]     recall_change    ΔRecall@k vs episode baseline
-            [393]     elapsed_time     cumulative elapsed_ms / elapsed_time_norm
-            [394]     cost             cumulative action cost this episode
-            [395:399] valid_actions    binary [qr_valid, rr_valid, prf_valid, stop_valid]
+        State layout:
+            0       : current query word count
+            1:385   : current query embedding (384 dimensions)
+            385     : score spread
+            386     : score entropy
+            387:390 : last action one-hot [QR, RR, PRF]
+            390     : normalized step
+            391     : top-k rank overlap with previous ranking
+            392     : semantic query drift from original query
+            393     : cumulative elapsed time, normalized
+            394     : cumulative action cost
+            395:399 : operational action mask [QR, RR, PRF, STOP]
 
-        Parameters
-        ----------
-        query         : original query string (for reference)
-        doc_ids       : current ranked doc IDs
-        doc_scores    : retrieval scores aligned with doc_ids
-        step          : 0-based step index
-        agents_used   : one-hot encoding of last action taken [qr, rr, prf]
-        ndcg_change   : cumulative ΔNDCG since episode start
-        recall_change : cumulative ΔRecall since episode start
-        elapsed_ms    : cumulative wall-clock time of agent calls (ms)
-        cum_cost      : cumulative cost of actions taken this episode
-        query_length  : precomputed query length (optional, computed if None)
-        query_emb     : precomputed query embedding (optional, computed if None)
-
-        Returns
-        -------
-        np.ndarray of shape (399,), dtype float32
+        No qrels, NDCG, Recall, reward, or oracle-quality features are used.
         """
         cfg = self.cfg
 
-        # ── Scalar query feature (invariant across episode)
         if query_length is None:
             query_length = np.float32(len(query.split()))
+        else:
+            query_length = np.float32(query_length)
 
-        # ── Query embedding (384-d, invariant across episode)
-        if query_emb is None:
-            query_emb = self.encoder.encode(
-                query, convert_to_numpy=True, show_progress_bar=False
+        if query_embedding is None:
+            query_embedding = self.encoder.encode(
+                query,
+                convert_to_numpy=True,
+                show_progress_bar=False,
             ).astype(np.float32)
+        else:
+            query_embedding = np.asarray(query_embedding, dtype=np.float32)
 
-        # ── Retrieval distribution features
-        spread = np.float32(self._score_spread(doc_scores))
-        ent    = np.float32(self._score_entropy(doc_scores))
+        if query_embedding.shape != (cfg.query_emb_dim,):
+            raise ValueError(
+                f"Expected query embedding shape ({cfg.query_emb_dim},), "
+                f"got {query_embedding.shape}"
+            )
 
-        # ── Agent & step metadata
-        used_vec  = np.array(agents_used[:N_AGENTS], dtype=np.float32)
-        norm_step = np.float32(step / max(cfg.max_steps, 1))
+        score_spread = np.float32(self._score_spread(docscores))
+        score_entropy = np.float32(self._score_entropy(docscores))
 
-        # ── Metric deltas (vs episode start)
-        nd = np.float32(ndcg_change)
-        rd = np.float32(recall_change)
+        last_action_vector = np.asarray(
+            last_action_agent,
+            dtype=np.float32,
+        )
+        if last_action_vector.shape != (3,):
+            raise ValueError(
+                "last_action_agent must be [last_qr, last_rr, last_prf]"
+            )
 
-        # ── Cost & time tracking
-        elapsed_norm = np.float32(elapsed_ms / cfg.elapsed_time_norm)
-        cost_val     = np.float32(cum_cost)
+        normalized_step = np.float32(step / max(cfg.max_steps, 1))
 
-        # ── Valid-action mask
-        valid_mask = np.array(
-            self._valid_actions_mask(agents_used, current_ndcg), dtype=np.float32
+        rank_overlap = self._rank_overlap(
+            previous_docids=previous_docids,
+            current_docids=docids,
+            k=cfg.top_k_rerank,
+        )
+
+        query_drift = self._query_drift(
+            original_query_embedding=original_query_embedding,
+            current_query_embedding=query_embedding,
+        )
+
+        normalized_elapsed = np.float32(
+            elapsed_ms / max(cfg.elapsed_time_norm, 1e-12)
+        )
+        cumulative_cost = np.float32(cumulative_cost)
+
+        valid_action_mask = np.asarray(
+            self._valid_actions_mask(last_action_agent),
+            dtype=np.float32,
         )
 
         state = np.concatenate([
-            [query_length],     # 1
-            query_emb,          # 384
-            [spread],           # 1
-            [ent],              # 1
-            used_vec,           # 3
-            [norm_step],        # 1
-            [nd],               # 1
-            [rd],               # 1
-            [elapsed_norm],     # 1
-            [cost_val],         # 1
-            valid_mask,         # 4
-        ])                      # total: 399
+            np.asarray([query_length], dtype=np.float32),     # 1
+            query_embedding,                                  # 384
+            np.asarray([score_spread], dtype=np.float32),     # 1
+            np.asarray([score_entropy], dtype=np.float32),    # 1
+            last_action_vector,                               # 3
+            np.asarray([normalized_step], dtype=np.float32),  # 1
+            np.asarray([rank_overlap], dtype=np.float32),     # 1
+            np.asarray([query_drift], dtype=np.float32),      # 1
+            np.asarray([normalized_elapsed], dtype=np.float32), # 1
+            np.asarray([cumulative_cost], dtype=np.float32),  # 1
+            valid_action_mask,                                # 4
+        ]).astype(np.float32)
 
-        assert state.shape[0] == cfg.state_dim, (
-            f"State dim mismatch: expected {cfg.state_dim}, got {state.shape[0]}"
+        assert state.shape == (cfg.state_dim,), (
+            f"State dimension mismatch: expected {cfg.state_dim}, "
+            f"got {state.shape}"
         )
+
         return state
 
     # ── 2. compute_effects ────────────────────────────────────────────────────
@@ -412,36 +481,39 @@ class Simulation:
             Δx           = x_after − x_before  (change due to this action)
             cost(a)      = cost returned by agent (e.g., token count for QueryReform)
         """
+        if action == ACTION_STOP:
+            return float(0.0)
+
         cfg = self.cfg
         ndcg_gain = ndcg_after - ndcg_before
         recall_gain = recall_after - recall_before
+
+        # Agents may return None as cost; treat it as zero.
+        action_cost = float(action_cost) if action_cost is not None else 0.0
+
         quality_reward = cfg.reward_alpha * ndcg_gain
         recall_reward = cfg.reward_beta * recall_gain
-        cost_penalty = 0.2 * action_cost
-        time_penalty = 0.1 * (elapsed_ms / cfg.elapsed_time_norm)
-        print(
-            "reward action=%s: ndcg=%+.6f, recall=%+.6f, "
-            "quality=%+.6f, recall_term=%+.6f, "
-            "cost=-%.6f, time=-%.6f, total=%+.6f","elapsed_ms=%.2f", "action_cost=%.6f",
+        cost_penalty = cfg.reward_gamma * action_cost
+        time_penalty = cfg.reward_delta * (
+            elapsed_ms / max(cfg.elapsed_time_norm, 1e-12)
+        )
+
+        total = quality_reward + recall_reward - cost_penalty - time_penalty
+
+        logger.debug(
+            "reward action=%s: ndcg_gain=%+.6f, recall_gain=%+.6f, "
+            "quality=%+.6f, recall_term=%+.6f, cost=-%.6f, time=-%.6f, total=%+.6f",
             ACTION_NAMES[action],
             ndcg_gain,
             recall_gain,
             quality_reward,
             recall_reward,
-            time_penalty,
             cost_penalty,
-            elapsed_ms/cfg.elapsed_time_norm,
-            action_cost,
-       )
-        if action == ACTION_STOP:
-             return float(0.0)
-        else:
-              return float(
-             2 * (ndcg_after   - ndcg_before)
-            + 1  * (recall_after - recall_before)
-            - (0.2 * action_cost)
-            - 0.1 * (elapsed_ms / cfg.elapsed_time_norm)
-            )
+            time_penalty,
+            total,
+        )
+
+        return float(total)
         
 
     # ── 4. generate_trajectory ────────────────────────────────────────────────
@@ -454,51 +526,91 @@ class Simulation:
         policy: str = "random",
         corpus_data: Optional[Dict[str, str]] = None,
     ) -> List[Transition]:
+        """
+        Generate one trajectory.
+    
+        Qrels are used only to:
+        - calculate transition rewards,
+        - log evaluation metrics,
+        - support the qrel-aware expert/oracle behavior policy.
+    
+        They are not included in the policy observation/state.
+        """
         cfg = self.cfg
         trajectory: List[Transition] = []
-        agents_used = [False, False, False]
+    
+        if corpus_data is None:
+            raise ValueError(
+                "corpus_data must be provided with actual document text for agents"
+            )
+    
+        cur_corpus = corpus_data.copy()
         cur_query = query
         cur_ids = list(doc_ids)
         cur_scores = np.asarray(doc_scores, dtype=np.float32)
-
-        if corpus_data is None:
-            raise ValueError("corpus_data must be provided with actual document text for agents")
-        cur_corpus = corpus_data.copy()
-
-        query_length = np.float32(len(query.split()))
-        query_emb = self.encoder.encode(
-            query, convert_to_numpy=True, show_progress_bar=False
+    
+        # This is a last-action one-hot vector, not cumulative action history:
+        # [last_was_qr, last_was_rr, last_was_prf].
+        # It enforces: QR->QR, RR->RR, and PRF->PRF are not permitted.
+        last_action_agent = [False, False, False]
+    
+        # The initial ranking has no predecessor. This gives rank_overlap = 0.0
+        # in the initial state.
+        previous_docids: Optional[List[str]] = None
+    
+        original_query_emb = self.encoder.encode(
+            query,
+            convert_to_numpy=True,
+            show_progress_bar=False,
         ).astype(np.float32)
-
-        baseline_ndcg = Simulation.compute_ndcg(cur_ids, qrels, cfg.ndcg_k)
-        baseline_recall = Simulation.compute_recall(cur_ids, qrels, cfg.recall_k)
-
-        cum_ndcg_change = 0.0
-        cum_recall_change = 0.0
+    
+        cur_query_emb = original_query_emb.copy()
+        cur_query_length = np.float32(len(cur_query.split()))
+    
         cum_elapsed_ms = 0.0
         cum_cost = 0.0
-
-        # For the expert policy, these store the exact action effects that
-        # were evaluated during planning. In particular, this prevents a QR
-        # action from invoking the LLM a second time.
+    
+        # For the expert policy, cache effects evaluated during two-step planning.
+        # This prevents QR from calling the LLM again after planning selected it.
         cached_plan: List[int] = []
         cached_effects: List[Tuple] = []
+    
         for step in range(cfg.max_steps):
+            # State contains only observable retrieval, query, history, cost,
+            # latency, and operational eligibility features.
             state = self.build_state(
-                cur_query, cur_ids, cur_scores,
-                step, agents_used, baseline_ndcg,
-                cum_ndcg_change, cum_recall_change,
-                cum_elapsed_ms, cum_cost,
-                query_length=query_length, query_emb=query_emb)
-
-            ndcg_before = Simulation.compute_ndcg(cur_ids, qrels, cfg.ndcg_k)
-            recall_before = Simulation.compute_recall(cur_ids, qrels, cfg.recall_k)
-
-            valid = self._valid_actions_mask(agents_used, ndcg_before)
-
+                query=cur_query,
+                docids=cur_ids,
+                docscores=cur_scores,
+                step=step,
+                last_action_agent=last_action_agent,
+                previous_docids=previous_docids,
+                original_query_embedding=original_query_emb,
+                elapsed_ms=cum_elapsed_ms,
+                cumulative_cost=cum_cost,
+                query_length=cur_query_length,
+                query_embedding=cur_query_emb,
+            )
+    
+            # Qrels remain available to the simulator for reward calculation.
+            # They must not be passed to build_state or _valid_actions_mask.
+            ndcg_before = Simulation.compute_ndcg(
+                cur_ids,
+                qrels,
+                cfg.ndcg_k,
+            )
+            recall_before = Simulation.compute_recall(
+                cur_ids,
+                qrels,
+                cfg.recall_k,
+            )
+    
+            # Operational mask only: no immediate repeat of the previous agent.
+            valid = self._valid_actions_mask(last_action_agent)
+    
             if policy == "expert":
-                # Continue a previously chosen two-step plan. These are cached
-                # transitions, so no agent and no LLM is executed again.
+                # A cached second planning action was evaluated during the
+                # preceding two-step look-ahead, so do not execute its agent again.
                 if cached_plan:
                     action = cached_plan.pop(0)
                     (
@@ -509,27 +621,32 @@ class Simulation:
                         elapsed_ms,
                         action_cost,
                     ) = cached_effects.pop(0)
-
+    
                 else:
                     remaining_steps = cfg.max_steps - step
                     max_plan_steps = min(2, remaining_steps)
-
+    
+                    # _policy_expert_two_step recomputes the eligibility mask
+                    # from last_action_agent and propagates it through the
+                    # look-ahead so plans like QR -> QR are never considered.
                     plan, effects = self._policy_expert_two_step(
                         cur_query,
                         cur_ids,
                         cur_scores,
                         qrels,
-                        valid,
+                        last_action_agent,
                         corpus_data=cur_corpus,
                         max_plan_steps=max_plan_steps,
                     )
-
-                    # Copy the selected plan/effects into a queue. The first
-                    # action is executed now; any second action is executed on
-                    # the next loop iteration using its cached effect.
+    
+                    if not plan or not effects:
+                        raise RuntimeError(
+                            "Expert planner returned an empty plan/effects list"
+                        )
+    
                     cached_plan = list(plan)
                     cached_effects = list(effects)
-
+    
                     action = cached_plan.pop(0)
                     (
                         new_query,
@@ -539,92 +656,148 @@ class Simulation:
                         elapsed_ms,
                         action_cost,
                     ) = cached_effects.pop(0)
+    
             else:
                 action = self._select_action(
-                    policy, valid,
-                    cur_query, cur_ids, cur_scores, qrels, agents_used
+                    policy,
+                    valid,
+                    cur_query,
+                    cur_ids,
+                    cur_scores,
+                    qrels,
+                    last_action_agent,
                 )
-                new_query, new_ids, new_scores, metrics, elapsed_ms, action_cost = \
-                    self.compute_effects(
-                        action,
-                        cur_query,
-                        cur_ids,
-                        cur_scores,
-                        qrels,
-                        corpus_data=cur_corpus,
-                    )
-
-            done = (action == ACTION_STOP) or (step == cfg.max_steps - 1) 
-
+    
+                (
+                    new_query,
+                    new_ids,
+                    new_scores,
+                    metrics,
+                    elapsed_ms,
+                    action_cost,
+                ) = self.compute_effects(
+                    action,
+                    cur_query,
+                    cur_ids,
+                    cur_scores,
+                    qrels,
+                    corpus_data=cur_corpus,
+                )
+    
+            done = (
+                action == ACTION_STOP
+                or step == cfg.max_steps - 1
+            )
+    
             ndcg_after = metrics["ndcg"]
             recall_after = metrics["recall"]
-
+    
             reward = self._compute_reward(
-                ndcg_before, ndcg_after,
-                recall_before, recall_after,
-                action, elapsed_ms, action_cost
+                ndcg_before,
+                ndcg_after,
+                recall_before,
+                recall_after,
+                action,
+                elapsed_ms,
+                action_cost,
             )
-
+    
             cum_elapsed_ms += elapsed_ms
             cum_cost += action_cost
-            cum_ndcg_change = ndcg_after - baseline_ndcg
-            cum_recall_change = recall_after - baseline_recall
-
+    
+            # Preserve the old ranking before replacing it. build_state uses this
+            # list and new_ids to calculate rank overlap in the next observation.
+            next_previous_docids = list(cur_ids)
+    
+            # Update last-action one-hot state. This is used both in the next
+            # observation and in the operational no-immediate-repeat mask.
             if action == ACTION_QR:
-                agents_used = [True, False, False]
+                next_last_action_agent = [True, False, False]
             elif action == ACTION_RR:
-                agents_used = [False, True, False]
+                next_last_action_agent = [False, True, False]
             elif action == ACTION_PRF:
-                agents_used = [False, False, True]
+                next_last_action_agent = [False, False, True]
             else:
-                agents_used = [False, False, False]
-
+                # STOP terminates the episode, but keeping a zero vector makes
+                # the terminal next_state well-defined.
+                next_last_action_agent = [False, False, False]
+    
             new_query_length = np.float32(len(new_query.split()))
-
             new_query_emb = self.encoder.encode(
                 new_query,
                 convert_to_numpy=True,
                 show_progress_bar=False,
             ).astype(np.float32)
+    
             next_state = self.build_state(
-                new_query, new_ids, new_scores,
-                step + 1, agents_used, ndcg_after,
-                cum_ndcg_change, cum_recall_change,
-                cum_elapsed_ms, cum_cost,
-                query_length=new_query_length, query_emb=new_query_emb,
+                query=new_query,
+                docids=new_ids,
+                docscores=np.asarray(new_scores, dtype=np.float32),
+                step=step + 1,
+                last_action_agent=next_last_action_agent,
+                previous_docids=next_previous_docids,
+                original_query_embedding=original_query_emb,
+                elapsed_ms=cum_elapsed_ms,
+                cumulative_cost=cum_cost,
+                query_length=new_query_length,
+                query_embedding=new_query_emb,
             )
-
-            trajectory.append(Transition(
-                state=state,
-                action=action,
-                reward=reward,
-                next_state=next_state,
-                done=done,
-                info={
-                    "query": cur_query,
-                    "new_query": new_query,
-                    "step": step,
-                    "action_name": ACTION_NAMES[action],
-                    "cost": action_cost,
-                    "cum_cost": cum_cost,
-                    "elapsed_ms": elapsed_ms,
-                    "cum_elapsed_ms": cum_elapsed_ms,
-                    "ndcg_before": ndcg_before,
-                    "ndcg_after": ndcg_after,
-                    "recall_before": recall_before,
-                    "recall_after": recall_after,
-                    "valid_actions": valid,
-                    "agents_used": list(agents_used),
-                },
-            ))
-
+    
+            trajectory.append(
+                Transition(
+                    state=state,
+                    action=action,
+                    reward=reward,
+                    next_state=next_state,
+                    done=done,
+                    info={
+                        "query": cur_query,
+                        "new_query": new_query,
+                        "step": step,
+                        "action_name": ACTION_NAMES[action],
+                        "cost": action_cost,
+                        "cum_cost": cum_cost,
+                        "elapsed_ms": elapsed_ms,
+                        "cum_elapsed_ms": cum_elapsed_ms,
+    
+                        # Keep qrel-based metrics for diagnosis/evaluation only.
+                        # They are intentionally absent from `state` and
+                        # `next_state`.
+                        "ndcg_before": ndcg_before,
+                        "ndcg_after": ndcg_after,
+                        "recall_before": recall_before,
+                        "recall_after": recall_after,
+    
+                        "valid_actions": list(valid),
+                        "last_action_agent": list(next_last_action_agent),
+                        "rank_overlap": float(
+                            self._rank_overlap(
+                                previous_docids=next_previous_docids,
+                                current_docids=new_ids,
+                                k=cfg.top_k_rerank,
+                            )
+                        ),
+                        "query_drift": float(
+                            self._query_drift(
+                                original_query_emb=original_query_emb,
+                                current_query_emb=new_query_emb,
+                            )
+                        ),
+                    },
+                )
+            )
+    
             cur_query = new_query
-            cur_ids = new_ids
+            cur_ids = list(new_ids)
             cur_scores = np.asarray(new_scores, dtype=np.float32)
-
+            cur_query_length = new_query_length
+            cur_query_emb = new_query_emb
+            previous_docids = next_previous_docids
+            last_action_agent = next_last_action_agent
+    
             if done:
                 break
-
+            
         return trajectory
 
     # ── 5. Action-selection policies ─────────────────────────────────────────
@@ -749,7 +922,7 @@ class Simulation:
         else:
             best_action = best_actions[0]
 
-        return best_action, effects.get(best_action)  # Pick the first best action (deterministic)
+        return best_action  # Pick the first best action (deterministic)
 
 
     def _policy_expert_two_step(
@@ -758,12 +931,14 @@ class Simulation:
         doc_ids: List[str],
         doc_scores: np.ndarray,
         qrels: Dict[str, int],
-        valid: List[int],
+        last_action_agent: List[bool],
         corpus_data: Optional[Dict[str, str]] = None,
         max_plan_steps: int = 2,
     ) -> Tuple[List[int], List[Tuple]]:
         cfg = self.cfg
         eps = 1e-12
+
+        valid = self._valid_actions_mask(last_action_agent)
 
         ndcg_current = Simulation.compute_ndcg(
             doc_ids,
@@ -834,9 +1009,18 @@ class Simulation:
             if max_plan_steps < 2:
                 continue
 
-            # The rulebook allows the same agent to be used twice.
-            # Thus QR -> QR remains a candidate if QR is valid.
-            valid2 = list(valid)
+            # The same agent cannot be used twice in a row. Build the
+            # last-action vector that results from action1 and recompute
+            # the eligibility mask for the second step.
+            next_last_action_agent1 = [False, False, False]
+            if action1 == ACTION_QR:
+                next_last_action_agent1 = [True, False, False]
+            elif action1 == ACTION_RR:
+                next_last_action_agent1 = [False, True, False]
+            elif action1 == ACTION_PRF:
+                next_last_action_agent1 = [False, False, True]
+
+            valid2 = self._valid_actions_mask(next_last_action_agent1)
 
             for action2 in range(N_AGENTS):
                 if not valid2[action2]:

@@ -78,7 +78,7 @@ load_env_file()
 # -----------------------------------------------------------------------------
 
 try:
-    from .simulation import Simulation, SimConfig, Transition, ACTION_STOP
+    from .simulation import Simulation, SimConfig, Transition, ACTION_STOP, ACTION_NAMES
     from .core.agents import AgentBase
     from .agents.reformulate import ReformulationAgent
     from .agents.rerank import RerankingAgent
@@ -86,7 +86,7 @@ try:
     from .utils.retriever import Retriever, create_retriever_callable
 
 except ImportError:
-    from simulation import Simulation, SimConfig, Transition, ACTION_STOP
+    from simulation import Simulation, SimConfig, Transition, ACTION_STOP, ACTION_NAMES
     from core.agents import AgentBase
     from agents.reformulate import ReformulationAgent
     from agents.rerank import RerankingAgent
@@ -218,13 +218,38 @@ def transition_to_dict(
     """Convert one Transition into JSON-serializable checkpoint data."""
     is_terminal = transition.action == ACTION_STOP
     is_timeout = step == max_steps - 1 and not is_terminal
+    info = transition.info
+    state = transition.state
 
     return {
-        "state": np.asarray(transition.state, dtype=np.float32).tolist(),
+        # Classic offline RL fields (kept for d3rlpy / MDPDataset reconstruction).
+        "state": np.asarray(state, dtype=np.float32).tolist(),
         "action": int(transition.action),
         "reward": float(transition.reward),
         "terminal": int(is_terminal),
         "timeout": int(is_timeout),
+
+        # Reward-objective fields for human-readable CSV export.
+        "ndcg_before": float(info.get("ndcg_before", 0.0)),
+        "ndcg_after": float(info.get("ndcg_after", 0.0)),
+        "recall_before": float(info.get("recall_before", 0.0)),
+        "recall_after": float(info.get("recall_after", 0.0)),
+        "cost": float(info.get("cost", 0.0)),
+        "latency_ms": float(info.get("elapsed_ms", 0.0)),
+        "cumulative_cost": float(info.get("cum_cost", 0.0)),
+        "cumulative_latency_ms": float(info.get("cum_elapsed_ms", 0.0)),
+
+        # Query / action metadata.
+        "new_query": info.get("new_query", ""),
+        "action_name": info.get("action_name", ACTION_NAMES.get(transition.action, "")),
+
+        # Observable state features (embedding excluded).
+        "query_length": float(state[0]),
+        "score_spread": float(state[385]),
+        "score_entropy": float(state[386]),
+        "step": float(state[390]),
+        "rank_overlap": float(state[391]),
+        "query_drift": float(state[392]),
     }
 
 
@@ -370,45 +395,59 @@ def build_mdp_dataset_from_checkpoints(checkpoint_dir: Path) -> MDPDataset:
 
 def export_checkpoints_to_csv(checkpoint_dir: Path, csv_path: Path) -> None:
     """
-    Export every completed trajectory checkpoint into one CSV.
+    Export every completed trajectory checkpoint into one human-readable CSV.
 
-    State is encoded as JSON in one CSV column so variable state dimensions
-    cannot corrupt the CSV structure.
+    The HDF5 output keeps the compact state/action/reward/terminal/timeout
+    format required by d3rlpy; this CSV is for analysis only.
     """
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        # Query / action metadata.
+        "query_id",
+        "query",
+        "new_query",
+        "action_name",
+        # Observable state features (embedding excluded).
+        "query_length",
+        "score_spread",
+        "score_entropy",
+        "step",
+        "rank_overlap",
+        "query_drift",
+        # Reward objectives.
+        "ndcg_before",
+        "ndcg_after",
+        "recall_before",
+        "recall_after",
+        "cost",
+        "latency_ms",
+        "cumulative_cost",
+        "cumulative_latency_ms",
+        "reward",
+        # Episode markers.
+        "terminal",
+        "timeout",
+    ]
 
     temporary_path = csv_path.with_suffix(".tmp")
 
     with open(temporary_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=[
-                "query_id",
-                "query",
-                "step",
-                "state",
-                "action",
-                "reward",
-                "terminal",
-                "timeout",
-            ],
-        )
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
         for record in iter_checkpoint_records(checkpoint_dir):
-            for step, transition in enumerate(record["transitions"]):
-                writer.writerow(
-                    {
-                        "query_id": record["query_id"],
-                        "query": record["query"],
-                        "step": step,
-                        "state": json.dumps(transition["state"]),
-                        "action": transition["action"],
-                        "reward": transition["reward"],
-                        "terminal": transition["terminal"],
-                        "timeout": transition["timeout"],
-                    }
-                )
+            for step_idx, transition in enumerate(record["transitions"]):
+                row = {
+                    "query_id": record["query_id"],
+                    "query": record["query"],
+                }
+                # New checkpoints store all extra fields; old checkpoints fall
+                # back to sensible defaults or empty values.
+                for key in fieldnames:
+                    if key not in row:
+                        row[key] = transition.get(key, "")
+                writer.writerow(row)
 
         f.flush()
         os.fsync(f.fileno())

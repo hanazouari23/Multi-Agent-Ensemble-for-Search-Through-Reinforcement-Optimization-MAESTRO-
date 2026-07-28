@@ -135,14 +135,16 @@ def generate_test_states(
 
         initial_state = simulation.build_state(
             query=item.query_text,
-            doc_ids=item.doc_ids,
-            doc_scores=item.doc_scores,
+            docids=item.doc_ids,
+            docscores=item.doc_scores,
             step=0,
-            agents_used=[False, False, False],
-            current_ndcg=initial_ndcg,
+            last_action_agent=[False, False, False],
+            previous_docids=None,
+            original_query_embedding=query_emb,
+            elapsed_ms=0.0,
+            cumulative_cost=0.0,
             query_length=query_length,
-            query_emb=query_emb,
-            
+            query_embedding=query_emb,
         )
 
         test_states.append(
@@ -187,6 +189,18 @@ def select_valid_action(
     return int(np.argmax(masked_q_values))
 
 
+def _state_features(state: np.ndarray) -> dict[str, Any]:
+    """Extract the non-embedding, human-readable features from a state vector."""
+    return {
+        "query_length": float(state[0]),
+        "score_spread": float(state[385]),
+        "score_entropy": float(state[386]),
+        "step": float(state[390]),
+        "rank_overlap": float(state[391]),
+        "query_drift": float(state[392]),
+    }
+
+
 def test_batch_states(
     initial_states: list[TestState],
     simulation: Simulation,
@@ -213,8 +227,14 @@ def test_batch_states(
 
         qrels_for_query = qrels.get(query_id, {})
 
-        agents_used = [False, False, False]
+        last_action_agent = [False, False, False]
         cumulative_cost = 0.0
+        cumulative_latency_ms = 0.0
+
+        # Cache the original query embedding for query_drift.
+        original_query_emb = query_emb.copy()
+        # The initial ranking has no predecessor, so rank_overlap will be 0.
+        previous_docids: list[str] | None = None
 
         current_ndcg = Simulation.compute_ndcg(
             ranked_doc_ids=doc_ids,
@@ -246,20 +266,22 @@ def test_batch_states(
             if action == ACTION_STOP:
                 rows.append(
                     {
+                        # Query / action metadata.
                         "query_id": query_id,
-                        "query_text": current_query,
-                        "step": step,
-                        "action": action,
+                        "query": current_query,
+                        "new_query": "",
                         "action_name": ACTION_NAMES[action],
-                        "ndcg_before": ndcg_before,
-                        "ndcg_after": ndcg_before,
-                        "delta_ndcg": 0.0,
-                        "recall_before": recall_before,
-                        "recall_after": recall_before,
-                        "delta_recall": 0.0,
-                        "action_cost": 0.0,
-                        "elapsed_ms": 0.0,
+                        # State features.
+                        **_state_features(state),
+                        # Reward objectives.
+                        "ndcg_before": current_ndcg,
+                        "ndcg_after": current_ndcg,
+                        "recall_before": current_recall,
+                        "recall_after": current_recall,
+                        "cost": 0.0,
+                        "latency_ms": 0.0,
                         "cumulative_cost": cumulative_cost,
+                        "cumulative_latency_ms": cumulative_latency_ms,
                         "reward": 0.0,
                         "terminal": True,
                         "timeout": False,
@@ -307,29 +329,42 @@ def test_batch_states(
             )
 
             cumulative_cost += action_cost
+            cumulative_latency_ms += elapsed_ms
 
-            # Actions 0, 1, and 2 correspond to the three agents.
+            # Update the one-hot vector of the last action taken.
             # STOP was already handled above.
-            agents_used[action] = True
+            if action == 0:
+                last_action_agent = [True, False, False]
+            elif action == 1:
+                last_action_agent = [False, True, False]
+            elif action == 2:
+                last_action_agent = [False, False, True]
+            else:
+                last_action_agent = [False, False, False]
 
             is_last_allowed_step = step == simulation.cfg.max_steps - 1
 
+            # Only QR and PRF change the query text.
+            new_query_text = next_query if action in (0, 2) else ""
+
             rows.append(
                 {
+                    # Query / action metadata.
                     "query_id": query_id,
-                    "query_text": current_query,
-                    "step": step,
-                    "action": action,
+                    "query": current_query,
+                    "new_query": new_query_text,
                     "action_name": ACTION_NAMES[action],
+                    # State features.
+                    **_state_features(state),
+                    # Reward objectives.
                     "ndcg_before": ndcg_before,
                     "ndcg_after": current_ndcg,
-                    "delta_ndcg": delta_ndcg,
                     "recall_before": recall_before,
                     "recall_after": current_recall,
-                    "delta_recall": delta_recall,
-                    "action_cost": action_cost,
-                    "elapsed_ms": elapsed_ms,
+                    "cost": action_cost,
+                    "latency_ms": elapsed_ms,
                     "cumulative_cost": cumulative_cost,
+                    "cumulative_latency_ms": cumulative_latency_ms,
                     "reward": reward,
                     "terminal": False,
                     "timeout": is_last_allowed_step,
@@ -357,21 +392,23 @@ def test_batch_states(
                 show_progress_bar=False,
             ).astype(np.float32)
 
+            next_previous_docids = list(doc_ids)
+
             state = simulation.build_state(
                 query=current_query,
-                doc_ids=doc_ids,
-                doc_scores=doc_scores,
+                docids=doc_ids,
+                docscores=doc_scores,
                 step=step + 1,
-                agents_used=agents_used,
-                current_ndcg=current_ndcg,
-                ndcg_change=delta_ndcg,
-                recall_change=delta_recall,
+                last_action_agent=last_action_agent,
+                previous_docids=previous_docids,
+                original_query_embedding=original_query_emb,
                 elapsed_ms=elapsed_ms,
-                cum_cost=cumulative_cost,
+                cumulative_cost=cumulative_cost,
                 query_length=query_length,
-                query_emb=query_emb,
+                query_embedding=query_emb,
             ).astype(np.float32)
 
+            previous_docids = next_previous_docids
             corpus_data = current_corpus_data
 
     export_test_results(rows, output_csv_path)
@@ -390,21 +427,29 @@ def export_test_results(
     output_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = [
+        # Query / action metadata.
         "query_id",
-        "query_text",
-        "step",
-        "action",
+        "query",
+        "new_query",
         "action_name",
+        # Observable state features (embedding excluded).
+        "query_length",
+        "score_spread",
+        "score_entropy",
+        "step",
+        "rank_overlap",
+        "query_drift",
+        # Reward objectives.
         "ndcg_before",
         "ndcg_after",
-        "delta_ndcg",
         "recall_before",
         "recall_after",
-        "delta_recall",
-        "action_cost",
-        "elapsed_ms",
+        "cost",
+        "latency_ms",
         "cumulative_cost",
+        "cumulative_latency_ms",
         "reward",
+        # Episode markers.
         "terminal",
         "timeout",
     ]
