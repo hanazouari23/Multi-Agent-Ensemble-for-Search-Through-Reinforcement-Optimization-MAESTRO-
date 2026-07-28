@@ -1,17 +1,23 @@
 # MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization
 
-A framework for multi-agent retrieval optimization using reinforcement learning. The system learns policies to orchestrate multiple specialized agents that improve search result quality while managing computational costs.
+A framework for multi-agent retrieval optimization using offline reinforcement learning. The system learns a policy that decides which specialized agents to invoke at each step to improve search result quality while managing computational costs.
 
 ## Overview
 
-**Goal:** Build an intelligent system that learns which agents to invoke at each step to improve search results. The policy is trained via reinforcement learning on user satisfaction metrics.
+**Goal:** Build an intelligent system that learns which agents to invoke at each step to improve search results. The policy is trained via offline reinforcement learning (Discrete CQL) on collected MDP trajectories, using MS MARCO relevance judgments.
 
 **Key Innovation:** Multi-agent ensemble approach where:
 - **ReformulationAgent** refines queries using LLM-powered rewriting
 - **RerankingAgent** re-scores results using cross-encoder models
-- **ClickPriorAgent** boosts clicked documents using ORCAS dataset priors
+- **PRFAgent** expands queries with pseudo-relevance feedback terms from top-ranked documents
 
-The system evaluates impact on metrics like NDCG, Recall, and User Satisfaction.
+The retrieval pipeline is modeled as an MDP with 4 actions (QueryReform, Rerank, PRF, STOP) and a multi-objective reward:
+
+```
+r = α·ΔNDCG + β·ΔRecall − γ·cost − δ·latency
+```
+
+The system evaluates impact on metrics like NDCG and Recall.
 
 ---
 
@@ -24,15 +30,19 @@ src/
 │   └── __init__.py
 ├── agents/                 # Concrete agent implementations
 │   ├── reformulate.py      # Query rewriting agent (OpenRouter LLM)
+│   ├── reformulate_with_feedback.py      # Reformulation using retrieval feedback
+│   ├── reformulate_ctx_free_exp_terms.py # Context-free expansion-term variant
 │   ├── rerank.py           # CrossEncoder reranking agent
-│   ├── click_prior.py      # ORCAS click-prior boosting agent
+│   ├── prf.py              # Pseudo-relevance feedback expansion agent
+│   ├── intent.py           # Multi-intent query expansion (experimental)
 │   └── __init__.py         # Agent exports
 ├── utils/
 │   ├── retriever.py        # OpenSearch BM25 retrieval interface
-│   ├── orcas_loader.py     # ORCAS TSV dataset loaders
 │   └── __init__.py
-├── main.py                 # Entry point & simulation launcher
-├── simulation.py           # MDP orchestrator & metrics
+├── main.py                 # Trajectory collection entry point (resumable checkpoints)
+├── simulation.py           # MDP orchestrator, state builder & metrics
+├── train_cql.py            # Offline RL training (Discrete CQL via d3rlpy)
+├── test_rl_policy.py       # Evaluate the trained policy on held-out queries
 └── __init__.py             # Package root
 ```
 
@@ -40,14 +50,15 @@ src/
 
 | Agent | Purpose | Key Implementation |
 |-------|---------|-------------------|
-| **ReformulationAgent** (id=0) | Query optimization | LLM-based rewriting via OpenRouter (deepseek-v3.2) |
-| **RerankingAgent** (id=1) | Result re-ranking | CrossEncoder (MS-MARCO-MiniLM-L-6-v2) |
-| **ClickPriorAgent** (id=2) | Click bias incorporation | Binary click signals from ORCAS dataset |
+| **ReformulationAgent** (action 0) | Query optimization | LLM-based rewriting via OpenRouter |
+| **RerankingAgent** (action 1) | Result re-ranking | CrossEncoder (MS-MARCO-MiniLM-L-6-v2) |
+| **PRFAgent** (action 2) | Query expansion | Expansion terms mined from top-k documents |
+| **STOP** (action 3) | End episode | — |
 
 ### Core Classes
 
 - **AgentBase**: Abstract base class with `compute_effects()` method defining agent interface
-- **Simulation**: MDP framework orchestrating agents, managing state, and computing metrics
+- **Simulation**: MDP framework orchestrating agents, managing state (399-dim vector), and computing metrics
 - **Retriever**: OpenSearch BM25 wrapper for initial retrieval
 
 ---
@@ -55,7 +66,7 @@ src/
 ## Setup & Installation
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.11+
 - Poetry (dependency management)
 - OpenRouter API key (for LLM integration)
 - OpenSearch instance (for retrieval)
@@ -79,39 +90,62 @@ echo "OPENROUTER_API_KEY=sk-or-v1-xxx..." > .env.txt
   ```
   OPENROUTER_API_KEY=<your-key>
   ```
-- The system auto-loads `.env.txt` at runtime.
+- `src/main.py` auto-loads `.env.txt` at runtime; agents also support standard `.env` via `python-dotenv`.
 
 ### Dependencies
 
 Core packages:
-- `sentence-transformers` (5.2.3) - Embeddings and cross-encoder models
-- `openai` (2.24.0) - LLM access via OpenRouter
-- `numpy` (2.0) - Numerical operations
-- `scipy` (1.13+) - Statistical utilities (entropy, softmax)
-- `requests` (2.32+) - HTTP client for OpenSearch
+- `sentence-transformers` - Embeddings and cross-encoder models
+- `openai` - LLM access via OpenRouter
+- `d3rlpy` - Offline RL (Discrete CQL)
+- `torch` (cu126) - Policy network backend
+- `numpy`, `scipy`, `pandas` - Numerical operations
+- `requests` - HTTP client for OpenSearch
+- `ir-datasets` - MS MARCO access in notebooks
 
 ---
 
 ## Quick Start
 
-### Running the Simulation
+### 1. Collect Trajectories (Offline RL Dataset)
 
 ```bash
 # From project root
-poetry run python -m src.main
+poetry run python -m src.main \
+    --num-trajectories 5000 \
+    --policy random \
+    --run-name random_5k
 ```
 
-This launches an interactive simulation that:
-1. Loads the ORCAS dataset (click priors)
-2. Creates agents and configuration
-3. Runs retrieval simulation with agent orchestration
-4. Reports metrics (NDCG, Recall, Satisfaction)
+Key CLI options:
+- `--policy {random,expert,stop,prf,rerank}` — action selection behavior
+- `--qrels-path`, `--queries-path` — defaults point to MS MARCO dev2 files under `notebooks/`
+- `--run-name` — groups checkpoints/outputs; rerun the same command to resume
+
+Each completed trajectory is checkpointed to `checkpoints/<run-name>/<hash>.json`. The final exports are:
+- `outputs/trajectories_<run-name>.csv`
+- `outputs/mdp_dataset_<run-name>.h5` (d3rlpy MDPDataset)
+
+### 2. Train the Policy
+
+```bash
+poetry run python -m src.train_cql
+```
+
+Trains Discrete CQL on `outputs/mdp_dataset_trajectories_two_policies_5k.h5` and saves `outputs/discrete_cql_policy.d3` (edit paths at the top of `src/train_cql.py` as needed).
+
+### 3. Evaluate the Policy
+
+```bash
+poetry run python -m src.test_rl_policy
+```
+
+Runs the trained policy on held-out queries and writes `outputs/cql_test_results2.csv`.
 
 ### Using Agents Directly
 
 ```python
-from src.agents import ReformulationAgent, RerankingAgent, ClickPriorAgent
-from src.core.agents import AgentBase
+from src.agents import ReformulationAgent, RerankingAgent, PRFAgent
 from src.utils.retriever import create_retriever_callable
 
 # Load embedding model
@@ -121,7 +155,7 @@ embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 # Initialize agents
 reformulate_agent = ReformulationAgent(embed_model=embed_model)
 rerank_agent = RerankingAgent(embed_model=embed_model)
-click_agent = ClickPriorAgent(embed_model=embed_model, beta=0.1)
+prf_agent = PRFAgent(embed_model=embed_model, num_expansion_terms=5)
 
 # Each agent exposes compute_effects(query_features) -> effects_dict
 results = reformulate_agent.compute_effects({
@@ -130,36 +164,18 @@ results = reformulate_agent.compute_effects({
 })
 ```
 
-### Loading ORCAS Dataset
-
-```python
-from src.utils.orcas_loader import load_orcas_tsv_sample
-
-# Load full dataset
-orcas_index = load_orcas_tsv_sample('data/orcas.tsv', sample_size=None)
-
-# Load sample (faster for testing)
-sample = load_orcas_tsv_sample('data/orcas.tsv', sample_size=1000)
-```
-
 ---
 
 ## Data
 
-### ORCAS Dataset
+### MS MARCO Queries & Qrels
 
-The system uses ORCAS (Open Relevance Click Analysis Set) for click priors:
-- **File:** `data/orcas.tsv` (50MB+)
-- **Format:** TSV with columns: query, clicked_doc_ids
-- **Purpose:** ClickPriorAgent uses click signals to boost document scores
+The pipeline uses MS MARCO relevance judgments:
 
-Expected structure:
-```
-query	                     clicked_docs
-python machine learning    doc123,doc456,doc789
-deep learning course       doc111,doc222
-...
-```
+- **Queries:** `notebooks/queries/topics.ms-marco-dev2.tsv` (query_id, query_text)
+- **Qrels:** `notebooks/qrels/qrels.ms-marco-dev2.tsv` (query_id, iteration, doc_id, relevance_grade)
+
+Additional query/qrels variants (TREC DL, combined sets) live in the same folders for experimentation.
 
 ---
 
@@ -171,7 +187,7 @@ The simulation computes:
 |--------|---------|-----------------|
 | **NDCG** | ∑ (2^rel - 1) / log(rank+1) | Ranking quality (0-1, higher better) |
 | **Recall@k** | relevant_retrieved / all_relevant | Fraction of relevant docs in top-k |
-| **User Satisfaction** | Weighted combination of NDCG + click signals | Overall user experience score |
+| **Reward** | α·ΔNDCG + β·ΔRecall − γ·cost − δ·latency | Multi-objective RL signal |
 
 ---
 
@@ -181,9 +197,10 @@ The simulation computes:
 
 - **`src/core/`**: Base framework (AgentBase, abstract interfaces)
 - **`src/agents/`**: Domain-specific implementations (all agents here)
-- **`src/utils/`**: Reusable utilities (retriever, data loaders)
-- **`src/main.py`**: Entry point orchestrating simulation
+- **`src/utils/`**: Reusable utilities (retriever)
+- **`src/main.py`**: Resumable trajectory collection with per-query checkpoints
 - **`src/simulation.py`**: MDP state machine and metrics
+- **`notebooks/`**: Experiments — retrieval endpoint, agent comparisons, dataset inspection, policy training/comparison
 
 ### Adding New Agents
 
@@ -193,8 +210,8 @@ from ..core.agents import AgentBase
 
 class MyCustomAgent(AgentBase):
     def __init__(self, embed_model, ...):
-        super().__init__(agent_id=3, embed_model=embed_model)
-    
+        super().__init__(agent_id=4, embed_model=embed_model)
+
     def compute_effects(self, query_features):
         # Implementation
         return {
@@ -206,7 +223,7 @@ class MyCustomAgent(AgentBase):
 
 2. Export in `src/agents/__init__.py`
 
-3. Integrate in simulation
+3. Register the action in `src/simulation.py` (action constant, name, cost) and integrate in the state builder
 
 ---
 
@@ -216,14 +233,15 @@ class MyCustomAgent(AgentBase):
 |-------|----------|
 | `ModuleNotFoundError: No module named 'openai'` | Run `poetry install` to sync dependencies |
 | `OPENROUTER_API_KEY not found` | Create `.env.txt` in project root with API key |
-| Import errors from agents | Ensure running with `poetry run` or from project root with Python path set |
-| ORCAS file not found | Download/place `data/orcas.tsv` in project |
+| Import errors from agents | Ensure running with `poetry run` from project root |
+| Trajectory run interrupted | Rerun the exact same command — completed checkpoints are skipped automatically |
 
 ---
 
 ## References
 
-- **ORCAS Dataset**: [Microsoft Research](https://www.microsoft.com/en-us/research/publication/orcas-open-source-click-annotations-for-search-evaluation/)
+- **MS MARCO**: [Microsoft](https://microsoft.github.io/msmarco/)
+- **d3rlpy**: [Offline RL library](https://d3rlpy.readthedocs.io/)
 - **CrossEncoder**: [Hugging Face Sentence Transformers](https://www.sbert.net/docs/pretrained-models/cross-encoders.html)
 - **SentenceTransformers**: [SBERT Documentation](https://www.sbert.net/)
 

@@ -1,3 +1,9 @@
+checkpoints/
+
+# Training logs & generated artifacts
+d3rlpy_logs/
+outputs/
+
 # Virtual environments
 .venv
 venv/
@@ -83,15 +89,9 @@ dmypy.json
 *.log
 
 # Data files
-.data/orcas.tsv
+data/
+.data/
 
 # Environment variables
 .env
 .env.local
-<<<<<<< Updated upstream
-data/orcas.tsv
-=======
-
-#data
-.data/
->>>>>>> Stashed changes

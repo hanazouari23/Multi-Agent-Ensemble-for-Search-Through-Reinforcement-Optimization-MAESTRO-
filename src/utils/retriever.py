@@ -2,16 +2,20 @@ import requests
 from typing import List, Dict, Any, Tuple
 import numpy as np
 import os
+from dotenv import load_dotenv
 
+ENDPOINT = os.getenv("RETRIEVAL_ENDPOINT")
+MY_USERNAME = os.getenv("MY_USERNAME")
+MY_PASSWORD = os.getenv("MY_PASSWORD")
 class Retriever:
     """
     Retriever that accesses OpenSearch endpoint to retrieve top 50 documents
     from the msmarco-v2.1-segmented index using BM25 matching.
     """
     
-    def __init__(self, endpoint: str = "https://opensearch.pads.fim.uni-passau.de/msmarco-v2.1-segmented/_search",
-                 username: str = "hana",
-                 password: str = "4DBpreroRMc!fPPczxaJ",
+    def __init__(self, endpoint: str = ENDPOINT,
+                 username: str = MY_USERNAME,
+                 password: str = MY_PASSWORD,
                  index_field: str = "segment",
                  top_k: int = 50):
         """

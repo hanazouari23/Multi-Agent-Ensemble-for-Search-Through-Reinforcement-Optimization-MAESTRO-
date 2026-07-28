@@ -20,7 +20,7 @@ class AgentBase(ABC):
         Parameters
         ----------
         agent_id : int
-            Agent identifier (0=QueryReform, 1=Rerank, 2=ClickPrior, 3=STOP)
+            Agent identifier (0=QueryReform, 1=Rerank, 2=PRF, 3=STOP)
         embed_model : SentenceTransformer
             Shared query encoder for embedding consistency
         """
@@ -44,7 +44,7 @@ class AgentBase(ABC):
             - 'embedding': current query embedding (768-d)
             - 'doc_ids': current ranked document IDs
             - 'doc_scores': current retrieval scores
-            - 'prior_cov', 'max_prior', 'mean_prior': ORCAS features
+            - 'corpus_data': mapping of doc_id to document text
         
         Returns
         -------
