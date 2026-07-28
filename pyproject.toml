@@ -25,6 +25,15 @@ matplotlib = "^3.10.9"
 pandas = "^3.0.3"
 dotenv = "^0.9.9"
 d3rlpy = "^2.8.1"
+torch = { version = "2.10.0+cu126", source = "pytorch-cu126" }
+# Keep these only if project directly imports them:
+torchvision = { version = "0.25.0+cu126", source = "pytorch-cu126" }
+torchaudio = { version = "2.10.0+cu126", source = "pytorch-cu126" }
+seaborn = "^0.13.2"
+[[tool.poetry.source]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

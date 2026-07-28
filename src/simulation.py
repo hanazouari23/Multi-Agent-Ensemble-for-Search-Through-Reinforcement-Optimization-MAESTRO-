@@ -29,9 +29,9 @@ ACTION_NAMES: Dict[int, str] = {
     ACTION_STOP: "STOP",
 }
 ACTION_COSTS: Dict[int, float] = {
-    ACTION_QR:   0.0,  # Reformulate cost is based on token count, handled separately
-    ACTION_RR:   0.0,
-    ACTION_PRF:  0.0,
+    ACTION_QR:   1,  # Reformulate cost is based on token count, handled separately
+    ACTION_RR:   0.3,
+    ACTION_PRF:  0.3,
     ACTION_STOP: 0.0,
 }
 N_AGENTS = 3  # QR, RR, PRF — excludes STOP
@@ -166,7 +166,7 @@ class Simulation:
     def compute_ndcg(
         ranked_doc_ids: List[str],
         qrels: Dict[str, int],
-        k: int = 10,
+        k: int = 50,
     ) -> float:
         ranked_docs = Simulation.deduplicate_doc_ids(ranked_doc_ids)[:k]
         gains = [qrels.get(doc_id, 0) for doc_id in ranked_docs]
@@ -179,7 +179,7 @@ class Simulation:
     def compute_recall(
         ranked_doc_ids: List[str],
         qrels: Dict[str, int],
-        k: int = 100,
+        k: int = 50,
     ) -> float:
         ranked_docs = Simulation.deduplicate_doc_ids(ranked_doc_ids)[:k]
         relevant = {d for d, r in qrels.items() if r > 0}
@@ -478,6 +478,11 @@ class Simulation:
         cum_elapsed_ms = 0.0
         cum_cost = 0.0
 
+        # For the expert policy, these store the exact action effects that
+        # were evaluated during planning. In particular, this prevents a QR
+        # action from invoking the LLM a second time.
+        cached_plan: List[int] = []
+        cached_effects: List[Tuple] = []
         for step in range(cfg.max_steps):
             state = self.build_state(
                 cur_query, cur_ids, cur_scores,
@@ -492,19 +497,52 @@ class Simulation:
             valid = self._valid_actions_mask(agents_used, ndcg_before)
 
             if policy == "expert":
-                action, effects = self._policy_expert_two_step(
-                    cur_query,
-                    cur_ids,
-                    cur_scores,
-                    qrels,
-                    valid,
-                    corpus_data=cur_corpus,
-                )
-                new_query, new_ids, new_scores, metrics, elapsed_ms, action_cost = effects
+                # Continue a previously chosen two-step plan. These are cached
+                # transitions, so no agent and no LLM is executed again.
+                if cached_plan:
+                    action = cached_plan.pop(0)
+                    (
+                        new_query,
+                        new_ids,
+                        new_scores,
+                        metrics,
+                        elapsed_ms,
+                        action_cost,
+                    ) = cached_effects.pop(0)
+
+                else:
+                    remaining_steps = cfg.max_steps - step
+                    max_plan_steps = min(2, remaining_steps)
+
+                    plan, effects = self._policy_expert_two_step(
+                        cur_query,
+                        cur_ids,
+                        cur_scores,
+                        qrels,
+                        valid,
+                        corpus_data=cur_corpus,
+                        max_plan_steps=max_plan_steps,
+                    )
+
+                    # Copy the selected plan/effects into a queue. The first
+                    # action is executed now; any second action is executed on
+                    # the next loop iteration using its cached effect.
+                    cached_plan = list(plan)
+                    cached_effects = list(effects)
+
+                    action = cached_plan.pop(0)
+                    (
+                        new_query,
+                        new_ids,
+                        new_scores,
+                        metrics,
+                        elapsed_ms,
+                        action_cost,
+                    ) = cached_effects.pop(0)
             else:
                 action = self._select_action(
                     policy, valid,
-                    cur_query, cur_ids, cur_scores, qrels,
+                    cur_query, cur_ids, cur_scores, qrels, agents_used
                 )
                 new_query, new_ids, new_scores, metrics, elapsed_ms, action_cost = \
                     self.compute_effects(
@@ -516,7 +554,7 @@ class Simulation:
                         corpus_data=cur_corpus,
                     )
 
-            done = (action == ACTION_STOP) or (step == cfg.max_steps - 1)
+            done = (action == ACTION_STOP) or (step == cfg.max_steps - 1) 
 
             ndcg_after = metrics["ndcg"]
             recall_after = metrics["recall"]
@@ -541,12 +579,19 @@ class Simulation:
             else:
                 agents_used = [False, False, False]
 
+            new_query_length = np.float32(len(new_query.split()))
+
+            new_query_emb = self.encoder.encode(
+                new_query,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            ).astype(np.float32)
             next_state = self.build_state(
                 new_query, new_ids, new_scores,
                 step + 1, agents_used, ndcg_after,
                 cum_ndcg_change, cum_recall_change,
                 cum_elapsed_ms, cum_cost,
-                query_length=query_length, query_emb=query_emb,
+                query_length=new_query_length, query_emb=new_query_emb,
             )
 
             trajectory.append(Transition(
@@ -591,6 +636,7 @@ class Simulation:
             doc_ids:    List[str],
             doc_scores: np.ndarray,
             qrels:      Dict[str, int],
+            agents_used: List[bool]
         ) -> int:
             if policy == "random":
                 return self._policy_random(valid)
@@ -600,7 +646,13 @@ class Simulation:
                 return ACTION_STOP
             if policy == "prf":
                 return ACTION_PRF
-            raise ValueError(f"Unknown policy: {policy!r}. Choose 'random', 'expert', or 'stop'.")
+            if policy == "rerank":
+                # First decision: run the reranker.
+                if not agents_used[1]:
+                    return ACTION_RR
+                # Second decision: explicitly end the episode.
+                return ACTION_STOP
+            raise ValueError(f"Unknown policy: {policy!r} valid options are: random, expert, stop, prf, rerank")
             
 
     def _policy_random(self, valid: List[int]) -> int:
@@ -708,9 +760,21 @@ class Simulation:
         qrels: Dict[str, int],
         valid: List[int],
         corpus_data: Optional[Dict[str, str]] = None,
-    ):
+        max_plan_steps: int = 2,
+    ) -> Tuple[List[int], List[Tuple]]:
         cfg = self.cfg
-        ndcg_current = Simulation.compute_ndcg(doc_ids, qrels, cfg.ndcg_k)
+        eps = 1e-12
+
+        ndcg_current = Simulation.compute_ndcg(
+            doc_ids,
+            qrels,
+            cfg.ndcg_k,
+        )
+        recall_current = Simulation.compute_recall(
+            doc_ids,
+            qrels,
+            cfg.recall_k,
+        )
 
         stop_effect = (
             query,
@@ -718,48 +782,69 @@ class Simulation:
             np.asarray(doc_scores, dtype=np.float32).copy(),
             {
                 "ndcg": ndcg_current,
-                "recall": Simulation.compute_recall(doc_ids, qrels, cfg.recall_k),
+                "recall": recall_current,
             },
             0.0,
             0.0,
         )
 
-        best_nonstop_action = None
-        best_nonstop_value = float("-inf")
-        best_nonstop_effect = None
-        eps = 1e-12
+        best_plan = [ACTION_STOP]
+        best_effects = [stop_effect]
+        best_value = ndcg_current
 
         for action1 in range(N_AGENTS):
             if not valid[action1]:
                 continue
 
             try:
-                query1, ids1, scores1, met1, time1, cost1 = self.compute_effects(
-                    action1,
-                    query,
-                    doc_ids,
-                    doc_scores,
-                    qrels,
-                    corpus_data=corpus_data,
+                query1, ids1, scores1, met1, time1, cost1 = (
+                    self.compute_effects(
+                        action1,
+                        query,
+                        doc_ids,
+                        doc_scores,
+                        qrels,
+                        corpus_data=corpus_data,
+                    )
                 )
+            except Exception as exc:
+                logger.warning(
+                    "Expert two-step: first-step %s failed: %s",
+                    ACTION_NAMES[action1],
+                    exc,
+                )
+                continue
 
-                best_after_action1 = met1["ndcg"]
+            step1_effect = (
+                query1,
+                ids1,
+                scores1,
+                met1,
+                time1,
+                cost1,
+            )
+            step1_value = met1["ndcg"]
 
-                if action1 == ACTION_QR:
-                    agents_used_2 = [True, False, False]
-                elif action1 == ACTION_RR:
-                    agents_used_2 = [False, True, False]
-                else:
-                    agents_used_2 = [False, False, True]
+            if step1_value > best_value + eps:
+                best_value = step1_value
+                best_plan = [action1]
+                best_effects = [step1_effect]
 
-                valid2 = self._valid_actions_mask(agents_used_2, best_after_action1)
+            # No available rollout step for a second action.
+            if max_plan_steps < 2:
+                continue
 
-                for action2 in range(N_AGENTS):
-                    if not valid2[action2]:
-                        continue
+            # The rulebook allows the same agent to be used twice.
+            # Thus QR -> QR remains a candidate if QR is valid.
+            valid2 = list(valid)
 
-                    try:
-                        query2, ids2, scores2, met2, time2, cost2 = self.compute_effects(
+            for action2 in range(N_AGENTS):
+                if not valid2[action2]:
+                    continue
+
+                try:
+                    query2, ids2, scores2, met2, time2, cost2 = (
+                        self.compute_effects(
                             action2,
                             query1,
                             ids1,
@@ -767,34 +852,39 @@ class Simulation:
                             qrels,
                             corpus_data=corpus_data,
                         )
-                        best_after_action1 = max(best_after_action1, met2["ndcg"])
-                    except Exception as exc:
-                        logger.warning(
-                            "Expert two-step: second-step action %s failed after %s: %s",
-                            ACTION_NAMES[action2],
-                            ACTION_NAMES[action1],
-                            exc,
-                        )
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Expert two-step: %s after %s failed: %s",
+                        ACTION_NAMES[action2],
+                        ACTION_NAMES[action1],
+                        exc,
+                    )
+                    continue
 
-                if best_after_action1 > best_nonstop_value + eps:
-                    best_nonstop_value = best_after_action1
-                    best_nonstop_action = action1
-                    best_nonstop_effect = (query1, ids1, scores1, met1, time1, cost1)
-
-            except Exception as exc:
-                logger.warning(
-                    "Expert two-step: first-step action %s failed: %s",
-                    ACTION_NAMES[action1],
-                    exc,
+                step2_effect = (
+                    query2,
+                    ids2,
+                    scores2,
+                    met2,
+                    time2,
+                    cost2,
                 )
+                step2_value = met2["ndcg"]
 
-        if best_nonstop_action is None:
-            return ACTION_STOP, stop_effect
+                if step2_value > best_value + eps:
+                    best_value = step2_value
+                    best_plan = [action1, action2]
+                    best_effects = [step1_effect, step2_effect]
 
-        if best_nonstop_value > ndcg_current + eps:
-            return best_nonstop_action, best_nonstop_effect
+        logger.debug(
+            "Expert selected plan=%s; start_ndcg=%.6f; final_ndcg=%.6f",
+            [ACTION_NAMES[action] for action in best_plan],
+            ndcg_current,
+            best_value,
+        )
 
-        return ACTION_STOP, stop_effect
+        return best_plan, best_effects
 
 
     # ── 7. Serialisation ──────────────────────────────────────────────────────
