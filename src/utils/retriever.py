@@ -1,12 +1,18 @@
-import requests
-from typing import List, Dict, Any, Tuple
-import numpy as np
+import logging
 import os
+from typing import List, Dict, Any, Tuple
+
+import numpy as np
+import requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 ENDPOINT = os.getenv("RETRIEVAL_ENDPOINT")
 MY_USERNAME = os.getenv("MY_USERNAME")
 MY_PASSWORD = os.getenv("MY_PASSWORD")
+
+
 class Retriever:
     """
     Retriever that accesses OpenSearch endpoint to retrieve top 50 documents
@@ -86,7 +92,7 @@ class Retriever:
             return documents
         
         except requests.exceptions.RequestException as e:
-            print(f"Error retrieving documents: {e}")
+            logger.warning("Error retrieving documents: %s", e)
             return []
 
 

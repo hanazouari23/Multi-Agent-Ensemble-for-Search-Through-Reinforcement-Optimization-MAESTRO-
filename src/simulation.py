@@ -525,9 +525,15 @@ class Simulation:
         qrels: Dict[str, int],
         policy: str = "random",
         corpus_data: Optional[Dict[str, str]] = None,
+        forced_actions: Optional[List[int]] = None,
     ) -> List[Transition]:
         """
         Generate one trajectory.
+
+        forced_actions, if provided, overrides the policy for the first N
+        steps. After the forced prefix the trajectory continues with the
+        selected policy. This is used to generate tree-style datasets where
+        every valid first action is explored from the same initial state.
     
         Qrels are used only to:
         - calculate transition rewards,
@@ -608,7 +614,33 @@ class Simulation:
             # Operational mask only: no immediate repeat of the previous agent.
             valid = self._valid_actions_mask(last_action_agent)
     
-            if policy == "expert":
+            if forced_actions and step < len(forced_actions):
+                # Override the policy for the first N steps. This lets us
+                # branch a single initial state into multiple trajectories.
+                action = forced_actions[step]
+                if not valid[action]:
+                    raise ValueError(
+                        f"forced action {action} ({ACTION_NAMES.get(action, '?')}) "
+                        f"is not valid at step {step}; valid mask={valid}"
+                    )
+
+                (
+                    new_query,
+                    new_ids,
+                    new_scores,
+                    metrics,
+                    elapsed_ms,
+                    action_cost,
+                ) = self.compute_effects(
+                    action,
+                    cur_query,
+                    cur_ids,
+                    cur_scores,
+                    qrels,
+                    corpus_data=cur_corpus,
+                )
+
+            elif policy == "expert":
                 # A cached second planning action was evaluated during the
                 # preceding two-step look-ahead, so do not execute its agent again.
                 if cached_plan:
@@ -779,8 +811,8 @@ class Simulation:
                         ),
                         "query_drift": float(
                             self._query_drift(
-                                original_query_emb=original_query_emb,
-                                current_query_emb=new_query_emb,
+                                original_query_embedding=original_query_emb,
+                                current_query_embedding=new_query_emb,
                             )
                         ),
                     },
@@ -799,6 +831,53 @@ class Simulation:
                 break
             
         return trajectory
+
+    def generate_expert_branches(
+        self,
+        query: str,
+        doc_ids: List[str],
+        doc_scores: np.ndarray,
+        qrels: Dict[str, int],
+        corpus_data: Optional[Dict[str, str]] = None,
+    ) -> List[Optional[List[Transition]]]:
+        """
+        Generate one trajectory per valid first action from the same state.
+
+        Each branch starts with a different action (QR, RR, PRF, or STOP) and
+        then continues with the two-step expert policy. This harvests the
+        oracle's exploration of the initial action space while keeping every
+        trajectory high-return because the expert recovers afterwards.
+
+        Returns a list indexed by action id; entries are None for actions that
+        are invalid or failed.
+        """
+        valid = self._valid_actions_mask([False, False, False])
+        trajectories: List[Optional[List[Transition]]] = [None] * self.cfg.n_actions
+
+        for action in range(self.cfg.n_actions):
+            if not valid[action]:
+                continue
+
+            try:
+                traj = self.generate_trajectory(
+                    query=query,
+                    doc_ids=doc_ids,
+                    doc_scores=doc_scores,
+                    qrels=qrels,
+                    policy="expert",
+                    corpus_data=corpus_data,
+                    forced_actions=[action],
+                )
+                trajectories[action] = traj
+            except Exception as exc:
+                logger.warning(
+                    "generate_expert_branches: action %s failed for query %r: %s",
+                    ACTION_NAMES.get(action, action),
+                    query,
+                    exc,
+                )
+
+        return trajectories
 
     # ── 5. Action-selection policies ─────────────────────────────────────────
     def _select_action(

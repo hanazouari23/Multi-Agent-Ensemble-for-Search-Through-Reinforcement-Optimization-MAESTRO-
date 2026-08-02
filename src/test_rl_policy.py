@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import os
 import time
@@ -17,14 +18,15 @@ from .simulation import Simulation, ACTION_STOP, ACTION_NAMES
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = PROJECT_ROOT / "outputs" / "discrete_cql_policy.d3"
-# QUERIES_PATH = PROJECT_ROOT / "notebooks" /"queries"/ "combined_trec_dl_queries.tsv"
-QUERIES_PATH = PROJECT_ROOT / "notebooks" /"queries"/ "topics.ms-marco-dev2.tsv"
-QRELS_PATH = PROJECT_ROOT / "notebooks" / "qrels" / "qrels.ms-marco-dev2.tsv"
-OUTPUT_CSV_PATH = PROJECT_ROOT / "outputs" / "cql_test_results2.csv"
+MODEL_PATH = PROJECT_ROOT / "outputs" / "discrete_cql_policy_after_tree.d3"
+
+# Default to the held-out MS MARCO dev set (NOT dev2, which was used for training).
+DEFAULT_QUERIES_PATH = PROJECT_ROOT / "notebooks" / "queries" / "topics.ms-marco-dev.tsv"
+DEFAULT_QRELS_PATH = PROJECT_ROOT / "notebooks" / "qrels" / "qrels.ms-marco-dev.tsv"
+DEFAULT_OUTPUT_CSV_PATH = PROJECT_ROOT / "outputs" / "cql_test_results_dev.csv"
 
 TOP_K = 50
-NUM_QUERIES_TO_TEST = 50
+DEFAULT_NUM_QUERIES = 50
 N_ACTIONS = 4
 
 from .main import (
@@ -125,12 +127,12 @@ def generate_test_states(
         initial_ndcg = Simulation.compute_ndcg(
             ranked_doc_ids=item.doc_ids,
             qrels=qrels_for_query,
-            k=50
+            k=simulation.cfg.ndcg_k,
         )
         initial_recall = Simulation.compute_recall(
             ranked_doc_ids=item.doc_ids,
             qrels=qrels_for_query,
-            k=50,
+            k=simulation.cfg.recall_k,
         )
 
         initial_state = simulation.build_state(
@@ -231,6 +233,14 @@ def test_batch_states(
         cumulative_cost = 0.0
         cumulative_latency_ms = 0.0
 
+        # Optional: cache invariant query properties across all states.
+        query_length = np.float32(len(current_query.split()))
+        query_emb = simulation.encoder.encode(
+            current_query,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        ).astype(np.float32)
+
         # Cache the original query embedding for query_drift.
         original_query_emb = query_emb.copy()
         # The initial ranking has no predecessor, so rank_overlap will be 0.
@@ -239,21 +249,13 @@ def test_batch_states(
         current_ndcg = Simulation.compute_ndcg(
             ranked_doc_ids=doc_ids,
             qrels=qrels_for_query,
-            k=50,
+            k=simulation.cfg.ndcg_k,
         )
         current_recall = Simulation.compute_recall(
             ranked_doc_ids=doc_ids,
             qrels=qrels_for_query,
-            k=50,
+            k=simulation.cfg.recall_k,
         )
-
-        # Optional: cache invariant query properties across all states.
-        query_length = np.float32(len(current_query.split()))
-        query_emb = simulation.encoder.encode(
-            current_query,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        ).astype(np.float32)
 
         for step in range(simulation.cfg.max_steps):
             valid_action_mask = state[-N_ACTIONS:]
@@ -374,6 +376,10 @@ def test_batch_states(
             if is_last_allowed_step:
                 break
 
+            # Snapshot the current ranking before overwriting it; this is the
+            # "previous" ranking used to compute rank_overlap in the next state.
+            next_previous_docids = list(doc_ids)
+
             # Move the rollout forward.
             current_query = next_query
             doc_ids = next_doc_ids
@@ -392,8 +398,6 @@ def test_batch_states(
                 show_progress_bar=False,
             ).astype(np.float32)
 
-            next_previous_docids = list(doc_ids)
-
             state = simulation.build_state(
                 query=current_query,
                 docids=doc_ids,
@@ -402,7 +406,7 @@ def test_batch_states(
                 last_action_agent=last_action_agent,
                 previous_docids=previous_docids,
                 original_query_embedding=original_query_emb,
-                elapsed_ms=elapsed_ms,
+                elapsed_ms=cumulative_latency_ms,
                 cumulative_cost=cumulative_cost,
                 query_length=query_length,
                 query_embedding=query_emb,
@@ -478,17 +482,60 @@ from .agents.prf import PRFAgent
 
 def main() -> None:
     logger = logging.getLogger(__name__)
+
+    parser = argparse.ArgumentParser(
+        description="Evaluate a trained CQL policy on a query/qrel test set."
+    )
+    parser.add_argument(
+        "--queries-path",
+        type=str,
+        default=str(DEFAULT_QUERIES_PATH),
+        help="Path to the test queries TSV.",
+    )
+    parser.add_argument(
+        "--qrels-path",
+        type=str,
+        default=str(DEFAULT_QRELS_PATH),
+        help="Path to the test qrels TSV.",
+    )
+    parser.add_argument(
+        "--output-csv",
+        type=str,
+        default=str(DEFAULT_OUTPUT_CSV_PATH),
+        help="Path for the output CSV.",
+    )
+    parser.add_argument(
+        "--num-queries",
+        type=int,
+        default=DEFAULT_NUM_QUERIES,
+        help="Number of judged queries to evaluate.",
+    )
+    args = parser.parse_args()
+
+    queries_path = Path(args.queries_path)
+    qrels_path = Path(args.qrels_path)
+    output_csv_path = Path(args.output_csv)
+    num_queries_to_test = args.num_queries
+
     # 1. Verify the required input files exist.
-    for path in (MODEL_PATH, QUERIES_PATH, QRELS_PATH):
+    for path in (MODEL_PATH, queries_path, qrels_path):
         if not path.is_file():
             raise FileNotFoundError(f"Required file not found: {path}")
 
     # 2. Load query texts and relevance judgments.
     queries = load_queries(
-        queries_path=str(QUERIES_PATH),
-        num_queries=NUM_QUERIES_TO_TEST,
+        queries_path=str(queries_path),
+        num_queries=None,
     )
-    qrels = load_qrels(qrels_path=str(QRELS_PATH))
+    qrels = load_qrels(qrels_path=str(qrels_path))
+
+    # Only evaluate queries that actually have relevance judgments.
+    # Otherwise NDCG/recall will always be 0 and the policy metrics are meaningless.
+    queries = [
+        (query_id, query_text)
+        for query_id, query_text in queries
+        if query_id in qrels
+    ][:num_queries_to_test]
 
     if not queries:
         raise RuntimeError("No test queries were loaded.")
@@ -513,13 +560,13 @@ def main() -> None:
     config = SimConfig(
         max_steps=3,
         top_k_rerank=50,
-        top_k_prf=50,
+        top_k_prf=10,
         ndcg_k=50,
-        recall_k=50,
+        recall_k=100,
         reward_alpha=2.0,
-        reward_beta=1,
-        reward_gamma=1.0,
-        reward_delta=0.5,
+        reward_beta=0.5,
+        reward_gamma=0.2,
+        reward_delta=0.1,
     )
 
     # 4. Build your Simulation exactly as used during dataset generation.
@@ -535,7 +582,7 @@ def main() -> None:
     # 5. Retrieve the initial top-50 documents for all test queries.
     retrieved_queries = batch_retrieve(
         queries=queries,
-        num_queries=NUM_QUERIES_TO_TEST,
+        num_queries=len(queries),
         retriever_func=retriever_func,
     )
 
@@ -567,18 +614,18 @@ def main() -> None:
         simulation=simulation,
         cql=cql,
         qrels=qrels,
-        output_csv_path=OUTPUT_CSV_PATH
+        output_csv_path=output_csv_path
     )
 
     # 9. Export all per-action evaluation data once.
     export_test_results(
         rows=rows,
-        output_csv_path=OUTPUT_CSV_PATH,
+        output_csv_path=output_csv_path,
     )
 
     print(
         f"Evaluation completed: {len(rows)} action rows "
-        f"saved to {OUTPUT_CSV_PATH}"
+        f"saved to {output_csv_path}"
     )
 
 

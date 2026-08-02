@@ -19,6 +19,7 @@ import logging
 import argparse
 import hashlib
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set, Any
 from collections import defaultdict
@@ -84,6 +85,7 @@ try:
     from .agents.rerank import RerankingAgent
     from .agents.prf import PRFAgent
     from .utils.retriever import Retriever, create_retriever_callable
+    from .utils.notifications import send_email
 
 except ImportError:
     from simulation import Simulation, SimConfig, Transition, ACTION_STOP, ACTION_NAMES
@@ -92,6 +94,7 @@ except ImportError:
     from agents.rerank import RerankingAgent
     from agents.prf import PRFAgent
     from utils.retriever import Retriever, create_retriever_callable
+    from utils.notifications import send_email
 
 
 # -----------------------------------------------------------------------------
@@ -199,15 +202,21 @@ def make_run_name(args: argparse.Namespace) -> str:
     )
 
 
-def checkpoint_path(checkpoint_dir: Path, query_id: str) -> Path:
+def checkpoint_path(
+    checkpoint_dir: Path,
+    query_id: str,
+    branch_id: str = "main",
+) -> Path:
     """
     Generate a deterministic, filesystem-safe checkpoint filename.
 
     Query IDs can contain characters unsuitable for filenames, so a
     SHA-256 prefix is used while the original ID remains inside JSON.
+    The optional branch_id supports multiple trajectories per query.
     """
     query_hash = hashlib.sha256(query_id.encode("utf-8")).hexdigest()[:20]
-    return checkpoint_dir / f"{query_hash}.json"
+    safe_branch = branch_id.replace(" ", "_")
+    return checkpoint_dir / f"{query_hash}_{safe_branch}.json"
 
 
 def transition_to_dict(
@@ -247,9 +256,17 @@ def transition_to_dict(
         "query_length": float(state[0]),
         "score_spread": float(state[385]),
         "score_entropy": float(state[386]),
-        "step": float(state[390]),
-        "rank_overlap": float(state[391]),
-        "query_drift": float(state[392]),
+        # 1-based step number: which action number this is in the trajectory.
+        "step": int(step) + 1,
+
+        # Post-action values from info, so they align with the action row:
+        # - rank_overlap: overlap between the ranking before and after this
+        #   action (1.0 for STOP, since the ranking is unchanged). state[391]
+        #   is the pre-action feature, which is 0.0 at step 0 by definition.
+        # - query_drift: drift of new_query vs the original query, caused by
+        #   this action. state[392] only shows it in the following row.
+        "rank_overlap": float(info.get("rank_overlap", state[391])),
+        "query_drift": float(info.get("query_drift", state[392])),
     }
 
 
@@ -258,11 +275,13 @@ def trajectory_to_checkpoint(
     query: str,
     trajectory: List[Transition],
     config: SimConfig,
+    branch_id: str = "main",
 ) -> Dict[str, Any]:
     """Build the durable record for one fully completed trajectory."""
     return {
         "query_id": query_id,
         "query": query,
+        "branch_id": branch_id,
         "num_steps": len(trajectory),
         "transitions": [
             transition_to_dict(
@@ -343,6 +362,30 @@ def find_completed_query_ids(checkpoint_dir: Path) -> Set[str]:
             logger.warning("Ignoring invalid checkpoint %s: %s", path, e)
 
     return completed_query_ids
+
+
+def find_completed_branches(checkpoint_dir: Path, query_id: str) -> Set[str]:
+    """
+    Return branch IDs that have a valid checkpoint for a given query.
+
+    Used by the `tree` policy, which writes one checkpoint per valid first
+    action (e.g. STOP, QueryReform, Rerank, PseudoRelevanceFeedback).
+    """
+    completed_branches: Set[str] = set()
+
+    if not checkpoint_dir.exists():
+        return completed_branches
+
+    query_hash = hashlib.sha256(query_id.encode("utf-8")).hexdigest()[:20]
+    for path in checkpoint_dir.glob(f"{query_hash}_*.json"):
+        try:
+            record = read_checkpoint(path)
+            if record.get("query_id") == query_id:
+                completed_branches.add(record.get("branch_id", "main"))
+        except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.warning("Ignoring invalid checkpoint %s: %s", path, e)
+
+    return completed_branches
 
 
 def iter_checkpoint_records(checkpoint_dir: Path):
@@ -432,27 +475,102 @@ def export_checkpoints_to_csv(checkpoint_dir: Path, csv_path: Path) -> None:
 
     temporary_path = csv_path.with_suffix(".tmp")
 
+    def state_feature(state: Any, index: int, default: float = 0.0) -> float:
+        """Read one scalar feature from a stored state vector, if present."""
+        try:
+            return float(state[index])
+        except (TypeError, IndexError, ValueError):
+            return default
+
+    def clean_number(value: Any, default: float = 0.0) -> float:
+        """Coerce to float, replacing missing/NaN/inf with a finite default."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not np.isfinite(number):
+            return default
+        return number
+
+    legacy_rows = 0
+
     with open(temporary_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
         for record in iter_checkpoint_records(checkpoint_dir):
             for step_idx, transition in enumerate(record["transitions"]):
+                state = transition.get("state")
+                action = transition.get("action")
+
+                # Legacy checkpoints (only state/action/reward/terminal/timeout)
+                # lack the diagnostic fields. Recover what is possible from the
+                # stored state vector and fill the rest with finite defaults so
+                # the CSV never contains empty/NaN cells.
+                if "ndcg_before" not in transition:
+                    legacy_rows += 1
+
                 row = {
                     "query_id": record["query_id"],
                     "query": record["query"],
+                    "new_query": transition.get("new_query") or record["query"],
+                    "action_name": (
+                        transition.get("action_name")
+                        or ACTION_NAMES.get(action, "")
+                    ),
+                    # Observable state features (recoverable from `state`).
+                    "query_length": clean_number(
+                        transition.get("query_length", state_feature(state, 0))
+                    ),
+                    "score_spread": clean_number(
+                        transition.get("score_spread", state_feature(state, 385))
+                    ),
+                    "score_entropy": clean_number(
+                        transition.get("score_entropy", state_feature(state, 386))
+                    ),
+                    # 1-based step number for the current trajectory. The
+                    # stored state vector holds the *normalized pre-action*
+                    # step index, so we use the transition order instead.
+                    "step": step_idx + 1,
+                    "rank_overlap": clean_number(
+                        transition.get("rank_overlap", state_feature(state, 391))
+                    ),
+                    "query_drift": clean_number(
+                        transition.get("query_drift", state_feature(state, 392))
+                    ),
+                    # Reward objectives (NOT stored in `state` by design; legacy
+                    # checkpoints cannot recover them and get 0.0 placeholders).
+                    "ndcg_before": clean_number(transition.get("ndcg_before")),
+                    "ndcg_after": clean_number(transition.get("ndcg_after")),
+                    "recall_before": clean_number(transition.get("recall_before")),
+                    "recall_after": clean_number(transition.get("recall_after")),
+                    "cost": clean_number(transition.get("cost")),
+                    "latency_ms": clean_number(transition.get("latency_ms")),
+                    "cumulative_cost": clean_number(
+                        transition.get("cumulative_cost")
+                    ),
+                    "cumulative_latency_ms": clean_number(
+                        transition.get("cumulative_latency_ms")
+                    ),
+                    "reward": clean_number(transition.get("reward")),
+                    # Episode markers.
+                    "terminal": int(transition.get("terminal", 0)),
+                    "timeout": int(transition.get("timeout", 0)),
                 }
-                # New checkpoints store all extra fields; old checkpoints fall
-                # back to sensible defaults or empty values.
-                for key in fieldnames:
-                    if key not in row:
-                        row[key] = transition.get(key, "")
                 writer.writerow(row)
 
         f.flush()
         os.fsync(f.fileno())
 
     os.replace(temporary_path, csv_path)
+
+    if legacy_rows:
+        logger.warning(
+            "%d rows came from legacy checkpoints without diagnostic fields. "
+            "ndcg_*/recall_*/cost/latency were exported as 0.0 placeholders; "
+            "regenerate those runs to obtain real values.",
+            legacy_rows,
+        )
 
 
 def count_checkpoint_stats(checkpoint_dir: Path) -> Tuple[int, int]:
@@ -491,7 +609,13 @@ def generate_trajectories(
     logger.info("=" * 70)
     logger.info("TRAJECTORY GENERATION PIPELINE")
     logger.info("=" * 70)
-    logger.info("Requested trajectories: %d", num_trajectories)
+    if policy == "tree":
+        logger.info(
+            "Requested queries: %d (tree policy yields up to 4 trajectories per query)",
+            num_trajectories,
+        )
+    else:
+        logger.info("Requested trajectories: %d", num_trajectories)
     logger.info("Policy: %s", policy)
     logger.info("Checkpoint directory: %s", checkpoint_dir)
     logger.info(
@@ -515,12 +639,149 @@ def generate_trajectories(
         config=config,
     )
 
-    selected_queries = queries[: min(num_trajectories, len(queries))]
+    # Only generate trajectories for queries that have relevance judgments.
+    # Unjudged queries produce all-zero NDCG/recall/reward and teach the policy
+    # nothing useful.
+    judged_queries = [
+        (query_id, query)
+        for query_id, query in queries
+        if query_id in qrels and qrels[query_id]
+    ]
+    selected_queries = judged_queries[: min(num_trajectories, len(judged_queries))]
     generated_this_run = 0
     skipped_this_run = 0
     failed_this_run = 0
 
     for trajectory_index, (query_id, query) in enumerate(selected_queries, start=1):
+        # ── Tree policy: one checkpoint per valid first action ──
+        if policy == "tree":
+            expected_branches = {ACTION_NAMES[a] for a in range(4)}
+            completed_branches = find_completed_branches(checkpoint_dir, query_id)
+
+            if completed_branches >= expected_branches:
+                skipped_this_run += 1
+                logger.info(
+                    "[%d/%d] SKIP all branches completed query_id=%s",
+                    trajectory_index,
+                    len(selected_queries),
+                    query_id,
+                )
+                continue
+
+            logger.info(
+                "[%d/%d] Generating tree branches query_id=%s | %s",
+                trajectory_index,
+                len(selected_queries),
+                query_id,
+                query[:80],
+            )
+
+            try:
+                doc_ids, doc_scores, corpus_data = load_initial_retrieval(
+                    query=query,
+                    retriever_func=retriever,
+                    top_k=config.top_k_rerank,
+                )
+
+                qrels_for_query = qrels.get(query_id, {})
+
+                branch_trajectories = sim.generate_expert_branches(
+                    query=query,
+                    doc_ids=doc_ids,
+                    doc_scores=doc_scores,
+                    qrels=qrels_for_query,
+                    corpus_data=corpus_data,
+                )
+
+                saved_any = False
+                for action, traj in enumerate(branch_trajectories):
+                    branch_name = ACTION_NAMES[action]
+                    if branch_name in completed_branches:
+                        continue
+
+                    if traj is None or not traj:
+                        logger.warning(
+                            "Empty/missing branch %s for query_id=%s; skipping",
+                            branch_name,
+                            query_id,
+                        )
+                        continue
+
+                    checkpoint = trajectory_to_checkpoint(
+                        query_id=query_id,
+                        query=query,
+                        trajectory=traj,
+                        config=config,
+                        branch_id=branch_name,
+                    )
+                    output_path = checkpoint_path(
+                        checkpoint_dir, query_id, branch_id=branch_name
+                    )
+                    atomic_write_json(output_path, checkpoint)
+
+                    saved_any = True
+                    generated_this_run += 1
+                    logger.info(
+                        "[%d/%d] SAVED branch=%s %d transitions -> %s",
+                        trajectory_index,
+                        len(selected_queries),
+                        branch_name,
+                        len(traj),
+                        output_path.name,
+                    )
+
+                if not saved_any:
+                    logger.info(
+                        "[%d/%d] All branches already existed query_id=%s",
+                        trajectory_index,
+                        len(selected_queries),
+                        query_id,
+                    )
+
+                total_completed = generated_this_run + skipped_this_run
+                if total_completed > 0 and total_completed % 1000 == 0:
+                    send_email(
+                        subject=f"[MAESTRO] Milestone: {total_completed} trajectories completed",
+                        body=(
+                            f"Policy: {policy}\n"
+                            f"Run: {checkpoint_dir.name}\n"
+                            f"Total completed: {total_completed}\n"
+                            f"Latest query: {query_id}\n"
+                            f"Timestamp: {datetime.now().isoformat()}"
+                        ),
+                    )
+
+            except KeyboardInterrupt:
+                logger.warning(
+                    "Interrupted. Previously saved checkpoints are safe. "
+                    "Run the same command again to resume."
+                )
+                raise
+
+            except Exception as e:
+                failed_this_run += 1
+                logger.exception(
+                    "[%d/%d] FAILED tree branches query_id=%s: %s",
+                    trajectory_index,
+                    len(selected_queries),
+                    query_id,
+                    e,
+                )
+                send_email(
+                    subject=f"[MAESTRO] Failure: query {query_id} failed",
+                    body=(
+                        f"Policy: {policy}\n"
+                        f"Run: {checkpoint_dir.name}\n"
+                        f"Query ID: {query_id}\n"
+                        f"Query text: {query[:200]}\n"
+                        f"Error: {e}\n"
+                        f"Timestamp: {datetime.now().isoformat()}"
+                    ),
+                )
+
+            continue
+
+        # ── All other policies: single trajectory per query ──
         output_path = checkpoint_path(checkpoint_dir, query_id)
 
         if query_id in completed_query_ids and output_path.exists():
@@ -574,6 +835,19 @@ def generate_trajectories(
             completed_query_ids.add(query_id)
             generated_this_run += 1
 
+            total_completed = len(completed_query_ids)
+            if total_completed > 0 and total_completed % 1000 == 0:
+                send_email(
+                    subject=f"[MAESTRO] Milestone: {total_completed} trajectories completed",
+                    body=(
+                        f"Policy: {policy}\n"
+                        f"Run: {checkpoint_dir.name}\n"
+                        f"Total completed: {total_completed}\n"
+                        f"Latest query: {query_id}\n"
+                        f"Timestamp: {datetime.now().isoformat()}"
+                    ),
+                )
+
             logger.info(
                 "[%d/%d] SAVED %d transitions -> %s",
                 trajectory_index,
@@ -597,6 +871,17 @@ def generate_trajectories(
                 len(selected_queries),
                 query_id,
                 e,
+            )
+            send_email(
+                subject=f"[MAESTRO] Failure: query {query_id} failed",
+                body=(
+                    f"Policy: {policy}\n"
+                    f"Run: {checkpoint_dir.name}\n"
+                    f"Query ID: {query_id}\n"
+                    f"Query text: {query[:200]}\n"
+                    f"Error: {e}\n"
+                    f"Timestamp: {datetime.now().isoformat()}"
+                ),
             )
 
     logger.info("=" * 70)
@@ -662,8 +947,8 @@ def main(args: argparse.Namespace) -> None:
         recall_k=args.recall_k,
         reward_alpha=2.0,
         reward_beta=0.5,
-        reward_gamma=1.0,
-        reward_delta=0.5,
+        reward_gamma=0.2,
+        reward_delta=0.1,
     )
 
     # -------------------------------------------------------------------------
@@ -799,7 +1084,7 @@ if __name__ == "__main__":
         "--policy",
         type=str,
         default="random",
-        choices=["random", "expert", "stop", "prf", "rerank"],
+        choices=["random", "expert", "stop", "prf", "rerank", "tree"],
         help="Action selection policy",
     )
 

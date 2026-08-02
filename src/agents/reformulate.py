@@ -75,7 +75,6 @@ class ReformulationAgent(AgentBase):
         }
     
     def _call_llm(self, query: str) -> str:
-        print("Model name:", MODEL_NAME)
         response = self.client.chat.completions.create(
             model=MODEL_NAME,
             messages=[

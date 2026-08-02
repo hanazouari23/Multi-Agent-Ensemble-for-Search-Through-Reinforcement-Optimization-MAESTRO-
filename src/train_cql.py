@@ -16,13 +16,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATASET_PATH = (
     PROJECT_ROOT
     / "outputs"
-    / "mdp_dataset_trajectories_two_policies_5k.h5"
+    / "mdp_dataset_tree_branches_5000.h5"
 )
 
 MODEL_PATH = (
     PROJECT_ROOT
     / "outputs"
-    / "discrete_cql_policy.d3"
+    / "discrete_cql_policy_after_tree.d3"
 )
 
 print(f"Loading dataset from: {DATASET_PATH}")
