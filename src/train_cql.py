@@ -1,4 +1,6 @@
 from pathlib import Path
+import csv
+
 import d3rlpy
 from d3rlpy.algos import DiscreteCQLConfig
 from d3rlpy.dataset import ReplayBuffer, InfiniteBuffer
@@ -24,6 +26,9 @@ MODEL_PATH = (
     / "outputs"
     / "discrete_cql_policy_after_tree.d3"
 )
+
+# Directory where per-epoch checkpoints will be saved.
+CHECKPOINT_DIR = PROJECT_ROOT / "outputs" / "cql_checkpoints_after_tree"
 
 print(f"Loading dataset from: {DATASET_PATH}")
 
@@ -62,17 +67,49 @@ cql = DiscreteCQLConfig(
     ),
 ).create(device="cuda:0")
 
+# ---- Per-epoch checkpoint callback ----
+# d3rlpy already saves internal parameters with save_interval=1, but this
+# callback writes an explicit, full-model checkpoint at the end of every
+# epoch so you can pick the best early-stopping checkpoint later.
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def save_epoch_checkpoint(algo, epoch: int, total_step: int) -> None:
+    """Save a full model checkpoint after each epoch."""
+    checkpoint_path = CHECKPOINT_DIR / f"discrete_cql_policy_after_tree_epoch_{epoch}.d3"
+    algo.save(str(checkpoint_path))
+    print(f"Epoch {epoch:02d} (step {total_step:,}) -> saved {checkpoint_path}")
+
+
 # ---- Offline training ----
-cql.fit(
+# fit returns a list of (epoch, metrics_dict) tuples, which we capture below.
+history = cql.fit(
     dataset,
     n_steps=100_000,
     n_steps_per_epoch=10_000,
     experiment_name="discrete_cql_offline",
     show_progress=True,
+    save_interval=1,
+    epoch_callback=save_epoch_checkpoint,
 )
 
-# ---- Save model and configuration together ----
+# ---- Save training metrics per epoch ----
+# This makes it easy to correlate training loss curves with test-set
+# performance when picking the best epoch checkpoint.
+METRICS_PATH = CHECKPOINT_DIR / "training_metrics.csv"
+if history:
+    fieldnames = ["epoch"] + sorted(history[0][1].keys())
+    with METRICS_PATH.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for epoch, metrics in history:
+            writer.writerow({"epoch": epoch, **metrics})
+    print(f"Saved per-epoch training metrics to: {METRICS_PATH}")
+    print("Metrics:", ", ".join(fieldnames[1:]))
+
+# ---- Save final model and configuration together ----
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 cql.save(str(MODEL_PATH))
 
 print(f"Saved trained policy to: {MODEL_PATH}")
+print(f"Per-epoch checkpoints are in: {CHECKPOINT_DIR}")
