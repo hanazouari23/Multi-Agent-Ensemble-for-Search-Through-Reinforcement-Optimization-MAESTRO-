@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = Path("..")
 expert_path = root / "outputs" / "trajectories_expert_test_results_dev_50.csv"
-cql_path    = root / "outputs" / "cql_dev_50.csv"
+cql_path    = root / "outputs" / "cql_stop_penalty_epoch10_dev_50.csv"
 
 expert = pd.read_csv(expert_path)
 cql = pd.read_csv(cql_path)
@@ -75,11 +75,11 @@ plt.title("Total reward per query: CQL vs Expert")
 plt.text(0.03, 0.97, f"Matched: {len(paired)}\nCQL win rate: {win.mean():.1%}\nMean diff: {paired['cql_reward'].subtract(paired['expert_reward']).mean():.4f}",
          transform=plt.gca().transAxes, va="top", bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.9})
 plt.tight_layout()
-plt.savefig(r"..\outputs\cql_vs_expert_dev_reward_scatter.png", dpi=150)
-print("Saved plot: outputs/cql_vs_expert_dev_reward_scatter.png")
+plt.savefig(r"..\outputs\cql_vs_expert_stop_penalty_dev_reward_scatter.png", dpi=150)
+print("Saved plot: outputs/cql_vs_expert_stop_penalty_dev_reward_scatter.png")
 
-paired.to_csv(r"..\outputs\cql_vs_expert_dev_per_query.csv", index=False)
-print("Saved per-query CSV: outputs/cql_vs_expert_dev_per_query.csv")
+paired.to_csv(r"..\outputs\cql_vs_expert_stop_penalty_dev_per_query.csv", index=False)
+print("Saved per-query CSV: outputs/cql_vs_expert_stop_penalty_dev_per_query.csv")
 
 # Display head
 print("\nTop 10 largest differences (CQL - Expert):")

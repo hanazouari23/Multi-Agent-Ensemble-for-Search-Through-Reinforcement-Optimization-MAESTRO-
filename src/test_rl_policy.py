@@ -18,12 +18,17 @@ from .simulation import Simulation, ACTION_STOP, ACTION_NAMES
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = PROJECT_ROOT / "outputs" / "discrete_cql_policy_after_tree.d3"
+MODEL_PATH = (
+    PROJECT_ROOT
+    / "outputs"
+    / "cql_checkpoints_low_stop"
+    / "discrete_cql_policy_low_stop_epoch_10.d3"
+)
 
 # Default to the held-out MS MARCO dev set (NOT dev2, which was used for training).
 DEFAULT_QUERIES_PATH = PROJECT_ROOT / "notebooks" / "queries" / "topics.ms-marco-dev.tsv"
 DEFAULT_QRELS_PATH = PROJECT_ROOT / "notebooks" / "qrels" / "qrels.ms-marco-dev.tsv"
-DEFAULT_OUTPUT_CSV_PATH = PROJECT_ROOT / "outputs" / "cql_test_results_dev.csv"
+DEFAULT_OUTPUT_CSV_PATH = PROJECT_ROOT / "outputs"/ "cql_low_stop_epoch10_dev_50.csv"
 
 TOP_K = 50
 DEFAULT_NUM_QUERIES = 50
@@ -510,15 +515,22 @@ def main() -> None:
         default=DEFAULT_NUM_QUERIES,
         help="Number of judged queries to evaluate.",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=str(MODEL_PATH),
+        help="Path to the trained d3rlpy model (.d3 file).",
+    )
     args = parser.parse_args()
 
     queries_path = Path(args.queries_path)
     qrels_path = Path(args.qrels_path)
     output_csv_path = Path(args.output_csv)
     num_queries_to_test = args.num_queries
+    model_path = Path(args.model)
 
     # 1. Verify the required input files exist.
-    for path in (MODEL_PATH, queries_path, qrels_path):
+    for path in (model_path, queries_path, qrels_path):
         if not path.is_file():
             raise FileNotFoundError(f"Required file not found: {path}")
 
@@ -601,7 +613,7 @@ def main() -> None:
 
     # 7. Load the trained d3rlpy policy.
     cql = d3rlpy.load_learnable(
-        str(MODEL_PATH),
+        str(model_path),
         device="cpu:0",  # Change to "cuda:0" if appropriate.
     )
 
