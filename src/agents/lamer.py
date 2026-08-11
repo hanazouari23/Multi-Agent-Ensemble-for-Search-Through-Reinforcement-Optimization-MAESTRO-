@@ -1,14 +1,14 @@
-import os
 import time
 from typing import Any, Dict, List
 
 import numpy as np
-from dotenv import load_dotenv
-from openai import OpenAI
 from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from ..core.agents import AgentBase
 
+
+MODEL_ID = "nvidia/Llama-3.1-8B-Instruct-FP8"
 
 # ── LameR Prompts ─────────────────────────────────────────────────────────────
 # The LLM is NOT asked to rewrite the query. It is shown the query plus the
@@ -55,21 +55,17 @@ class LameRAgent(AgentBase):
     ):
         # agent_id=4 reserves a slot outside the current {QR, RR, PRF, STOP} set.
         super().__init__(agent_id=4, embed_model=embed_model)
-        load_dotenv()
 
         self.n_candidates = n_candidates
         self.top_k_initial = top_k_initial
         self.top_k_final = top_k_final
 
-        self.client = OpenAI(
-            base_url=os.getenv("BASE_URL_HPC"),
-            api_key=os.getenv("LLMAPI_KEY"),
-            default_headers={
-                "HTTP-Referer": "MAESTRO-LameR",
-                "X-Title": "LameR Zero-Shot Retriever",
-            },
+        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID,
+            torch_dtype="auto",
+            device_map="auto",
         )
-        self.model_name = os.getenv("MODEL_NAME_HPC")
 
     def compute_effects(self, query_features: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -143,7 +139,7 @@ class LameRAgent(AgentBase):
 
     def _generate_candidates(self, query: str, passage_block: str) -> List[str]:
         """
-        Call the LLM and parse one candidate answer per line.
+        Call the local Llama model and parse one candidate answer per line.
 
         Args:
             query: Original query text.
@@ -159,18 +155,31 @@ class LameRAgent(AgentBase):
             n_candidates=self.n_candidates,
         )
 
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ]
+
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.7,  # Encourage diverse candidate answers.
-                max_tokens=200,
-                n=1,
+            inputs = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+                add_generation_prompt=True,
+            ).to(self.model.device)
+            input_len = inputs["input_ids"].shape[-1]
+
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=200,
+                do_sample=True,
+                temperature=0.7,
+                pad_token_id=self.tokenizer.eos_token_id,
             )
-            content = response.choices[0].message.content
+            content = self.tokenizer.decode(
+                outputs[0][input_len:], skip_special_tokens=True
+            )
             if not content:
                 return []
         except Exception:
