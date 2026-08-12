@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
@@ -11,11 +12,19 @@ from sentence_transformers import SentenceTransformer
 from ..core.agents import AgentBase
 
 
-# API configuration is read from the environment (same pattern as ReformulationAgent).
+# API configuration is read from the environment (same pattern as LameRAgent).
 load_dotenv()
+
 API_KEY = os.getenv("LLMAPI_KEY")
 BASE_URL = os.getenv("BASE_URL_HPC")
-MODEL_NAME = os.getenv("MODEL_NAME_HPC")
+MODEL_NAME = os.getenv("MODEL_NAME_HPC_2")
+
+if not API_KEY:
+    raise RuntimeError("Missing environment variable: LLMAPI_KEY")
+if not BASE_URL:
+    raise RuntimeError("Missing environment variable: BASE_URL_HPC")
+if not MODEL_NAME:
+    raise RuntimeError("Missing environment variable: MODEL_NAME_HPC_3")
 
 # ── HyDE Prompts ──────────────────────────────────────────────────────────────
 # The LLM is asked to hallucinate a short passage that would answer the
@@ -84,15 +93,14 @@ class HyDEAgent(AgentBase):
         embed_model: SentenceTransformer,
         top_k: int = 50,
         rrf_k: int = 60,
-        model_name: str = None,
     ):
         # agent_id=5 keeps the agent outside the current {QR, RR, PRF, STOP} set.
         super().__init__(agent_id=5, embed_model=embed_model)
 
         self.top_k = top_k
         self.rrf_k = rrf_k
-        self.model_name = model_name or MODEL_NAME
 
+        print(f"[HyDE] LLM client config: base_url={BASE_URL}, model={MODEL_NAME}")
         self.client = OpenAI(
             base_url=BASE_URL,
             api_key=API_KEY,
@@ -188,20 +196,25 @@ class HyDEAgent(AgentBase):
         ]
 
         try:
+            print(f"[HyDE] Calling LLM API with model={MODEL_NAME}")
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=MODEL_NAME,
                 messages=messages,
                 temperature=0.7,
                 max_tokens=256,
             )
+            print(f"[HyDE] LLM API response received: {type(response)}")
             content = response.choices[0].message.content
             if content is None:
+                print("[HyDE] LLM response content is None")
                 return ""
             content = content.strip()
             if not content:
+                print("[HyDE] LLM response content is empty after strip")
                 return ""
-        except Exception:
-            # Gracefully degrade to an empty passage if the API call fails.
+        except Exception as e:
+            print(f"[HyDE] API call failed: {type(e).__name__}: {e}")
+            traceback.print_exc()
             return ""
 
         # Keep only the first paragraph if the model emits extra commentary.

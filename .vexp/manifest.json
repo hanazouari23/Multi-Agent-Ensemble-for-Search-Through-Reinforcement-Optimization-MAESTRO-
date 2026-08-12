@@ -1,0 +1,43 @@
+{
+  "file_hashes": {
+    ".kilo/plugin/vexp-hint.js": "a06c002f260c31de999fdc0a95406b565fffd3f3cc5add09d2c6f6e52908aff9",
+    ".kilocode/rules/vexp.md": "606d899c6bfab577b27334b7642293d9311d779f95a31e2456c0644b64245e5d",
+    "README.md": "dcf5b49cae96df34b3ec379550860e273258c4923c2c2edb69c0a2f291f11d04",
+    "notebooks/compare_policy.py": "e7a03c50e665374af4ebabe8b4ed397890d5dd45dc0d0273816b1757c02be4ba",
+    "notebooks/visualize_cql_vs_expert.py": "c3df28d5e7555c90d39671c391fc628b9677d2b46f202d6091ecc85a84ae688f",
+    "src/__init__.py": "64ae150f3316c0d16c517949aded37b597e1d44f0c91e2c857eb9958b2ebff16",
+    "src/agents/__init__.py": "6c8f3884504acedf7c17a10aae2672bfcc398e844600756b36d8c5d2c0848502",
+    "src/agents/hyde.py": "6d0dd8e4dd55b5e73e9357a03482d40f69ffa30f8f5dab08ca0b02f92e726d7b",
+    "src/agents/intent.py": "d658c9bf28a58b728d293d78b48ca5bffad407095613fac997731affb6f9dd7d",
+    "src/agents/lamer.py": "91dae33481f8eef0f2bd36da6680b5745a22d7a3bec57b242fc86f2aa59f5cec",
+    "src/agents/prf.py": "6f26c68d5d33f3e0ab5042cfdb68cb9f487e081abd95f62215a82271da7f0c3a",
+    "src/agents/reformulate.py": "c39a21638c0e6fcf7cd4601b7f3ad6b82e7c74aa4269de46e5bd20f997f05e19",
+    "src/agents/reformulate_ctx_free_exp_terms.py": "cb7d3911a5d1999204f376b66f41cf705627e1316fa09d0b132f4fc2a220c989",
+    "src/agents/reformulate_with_feedback.py": "91cba65bf940d39202fe06595ebb4dd6e9aeaa6dc7c0b4ff5b3b4af64108f264",
+    "src/agents/rerank.py": "268bb316583dfb1ba862951ba0ec609a1a9b99172a8596f9128dbdae19295454",
+    "src/core/__init__.py": "99ef7c70d880beb5ec8a48dd39a458f5667999b00d54e3c257b83126c722b7a2",
+    "src/core/agents.py": "0c82288a378fa5f587ad4cc0b092ba82ac5b693e206da61286806ee824de7da9",
+    "src/main.py": "72c8bddea8ee5f4a7aed5b2a06c5940061a5e0f414156a016b6734991c7edfd2",
+    "src/rebuild_dataset_stop_penalty.py": "19c17f9154490e4d6202c821d3fbe93afdb3ae0f6388c3625b6454ceba09bbb7",
+    "src/rebuild_dataset_terminal_reward.py": "8e7f7490829d3a5d35a683bf64dc3c1c27c1e1f8899972cf3bb6067d5a09e6a0",
+    "src/simulation.py": "a85fdbd56dbc4448314d05aa3cb4109793994cd32ca9093dbf9bb1192b3569e6",
+    "src/test_bc_policy.py": "3f59fd62f7370e2d958b3eaef85b223f612ce02129cd94be4ae0ff2d2011a712",
+    "src/test_expert_policy.py": "377b9665fbafb53d96eeffd3e37b14b2b7e64c307fd09901b748f11e362eebb5",
+    "src/test_rl_policy.py": "c95889f37574522e5328b820a8ccf0d6da2299aa089e9bb561d66f0d4639d561",
+    "src/train_bc.py": "c1dd4fd80ad5abb411f5ee7937a6f4b9b9bba735a9ace0872ad5cd6522a75f78",
+    "src/train_cql.py": "98cab9a361f027e7d287defc001a9761b8063c4cee5b98346896d7eebe23bc93",
+    "src/train_cql_with_bc.py": "0b097d378f5a0c9cc0bf6429f9f86ccb276ee5aeeb1933534f63e645558af44f",
+    "src/utils/__init__.py": "51ba02c78f226d99d45503a182be0d8b467f29399bd92fef694d10eb0b9c262f",
+    "src/utils/notifications.py": "2ffd5ada52f1bf81e0dc2cd0fb20e4939d7ee8e7ac3a1b802baf047ae24d3a0b",
+    "src/utils/retriever.py": "7663bb01a64a44e35b27dd62b4b3080c5f9c0ee1ce5bcaa3ded20927ceaaf829"
+  },
+  "indexed_at_commit": "eb2ce4871797167817819e680927076dd0267eb8",
+  "indexed_at_timestamp": "2026-08-12T17:57:17.760157800+00:00",
+  "schema_version": 3,
+  "stats": {
+    "total_edges": 234,
+    "total_files": 30,
+    "total_nodes": 177
+  },
+  "vexp_version": "2.5.3"
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "vexp": {
+      "type": "local",
+      "command": [
+        "node",
+        "c:\\Users\\hanaz\\.vscode\\extensions\\vexp.vexp-vscode-2.5.3-win32-x64\\dist\\mcp-server.cjs"
+      ],
+      "env": {
+        "VEXP_WORKSPACE": "c:\\Users\\hanaz\\Documents\\GitHub\\Multi-Agent-Ensemble-for-Search-Through-Reinforcement-Optimization-MAESTRO-"
+      },
+      "enabled": true
+    }
+  }
+}
