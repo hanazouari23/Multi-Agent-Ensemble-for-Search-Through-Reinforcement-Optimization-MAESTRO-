@@ -16,6 +16,7 @@ load_dotenv()
 API_KEY = os.getenv("LLMAPI_KEY")
 BASE_URL = os.getenv("BASE_URL_HPC")
 MODEL_NAME = os.getenv("MODEL_NAME_HPC_2")
+PASSAGE_CHARS = 500 # truncate passages to this many characters for LLM prompt
 
 if not API_KEY:
     raise RuntimeError("Missing environment variable: LLMAPI_KEY")
@@ -26,21 +27,25 @@ if not MODEL_NAME:
 
 
 # ── LameR prompts (Table 1 of Shen et al., 2023) ─────────────────────────────
+# The LLM is NOT asked to rewrite the query. It is shown the query plus the
+# top-k BM25 passages as in-domain demonstrations and asked to generate
+# plausible answers. Those answers are concatenated with the original query
+# and submitted back to BM25.
 LAMER_SYSTEM_PROMPT = (
-    "You are a helpful assistant for information retrieval. "
-    "You will be given a query and a list of candidate answering passages, "
-    "most of which are wrong. Write a single correct answering passage. "
-    "Respond with exactly one concise sentence of plain text. "
+    "You are a helpful reading assistant. "
+    "Given a question and a set of passages retrieved by a search engine, "
+    "generate up to {n_candidates} concise, plausible answers to the question. "
+    "Each answer should be a short phrase or sentence that directly answers the question. "
+    "Return exactly one answer per line. Do not enumerate them. "
+    "If the passages do not contain enough information, generate likely answers based on the question alone."
 )
 
 LAMER_USER_TEMPLATE = (
-    'Given a question "{query}" and its possible answering passages '
-    "(most of these passages are wrong) enumerated as:\n"
-    "{passages}\n\n"
-    "please write a correct answering passage."
+    "Question: {query}\n\n"
+    "Retrieved passages:\n{passages}\n\n"
+    "Generate up to {n_candidates} plausible answers (one per line):"
 )
 
-PASSAGE_CHARS = 512      # ~128-token truncation for candidate passages
 
 
 def _clean_answer(text: str) -> str:
@@ -180,14 +185,16 @@ class LameRAgent(AgentBase):
 
     def _generate_candidates(self, query: str, passage_block: str) -> List[str]:
         """
-        Sample N independent answers in a single batched LLM call (Eq. 4).
+        Ask the LLM once for up to N distinct answers (Eq. 4), one per line.
 
-        Uses the API's ``n`` parameter to get N independent completions
-        (parallel decoding, 1 network round-trip). Falls back to an empty
-        list if the endpoint does not support ``n > 1``.
+        The prompt instructs the model to return up to ``n_candidates`` plausible
+        answers, each on its own line. We parse those lines, clean and deduplicate
+        them, and return at most ``n_candidates`` answers.
         """
-        system_msg = LAMER_SYSTEM_PROMPT
-        user_msg = LAMER_USER_TEMPLATE.format(query=query, passages=passage_block)
+        system_msg = LAMER_SYSTEM_PROMPT.format(n_candidates=self.n_candidates)
+        user_msg = LAMER_USER_TEMPLATE.format(
+            query=query, passages=passage_block, n_candidates=self.n_candidates
+        )
 
         try:
             response = self.client.chat.completions.create(
@@ -197,27 +204,26 @@ class LameRAgent(AgentBase):
                     {"role": "user", "content": user_msg},
                 ],
                 temperature=0.7,
-                max_tokens=64,
-                n=self.n_candidates,
+                max_tokens=200,
             )
         except Exception as e:
-            # Some HPC endpoints do not support n > 1.
-            print(
-                f"[LameR] Batched call failed ({type(e).__name__}). "
-                f"Endpoint may not support n={self.n_candidates}."
-            )
+            print(f"[LameR] LLM call failed ({type(e).__name__}).")
             traceback.print_exc()
+            return []
+
+        content = response.choices[0].message.content
+        if not content or not content.strip():
             return []
 
         seen = set()
         candidates: List[str] = []
 
-        for choice in response.choices:
-            content = choice.message.content
-            if not content or not content.strip():
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line:
                 continue
 
-            answer = _clean_answer(content)
+            answer = _clean_answer(line)
             if len(answer) < 3:
                 continue
 
@@ -228,6 +234,9 @@ class LameRAgent(AgentBase):
 
             seen.add(key)
             candidates.append(answer)
+
+            if len(candidates) >= self.n_candidates:
+                break
 
         print(f"[LameR] Final candidates ({len(candidates)}): {candidates}")
         return candidates
