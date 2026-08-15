@@ -1,8 +1,7 @@
 checkpoints/
 
 # Training logs & generated artifacts
-d3rlpy_logs/
-outputs/
+archive/
 
 # Virtual environments
 .venv
@@ -95,3 +94,9 @@ data/
 # Environment variables
 .env
 .env.local
+
+
+#AI agents
+/.kilocode
+/.vexp
+/.kilo

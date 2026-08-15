@@ -15,20 +15,13 @@ import numpy as np
 
 from .utils.retriever import Retriever, create_retriever_callable
 from .simulation import Simulation, ACTION_STOP, ACTION_NAMES
+from .experiments import require_experiment_dir, log_artifact
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-MODEL_PATH = (
-    PROJECT_ROOT
-    / "outputs"
-    / "cql_checkpoints_low_stop"
-    / "discrete_cql_policy_low_stop_epoch_10.d3"
-)
 
 # Default to the held-out MS MARCO dev set (NOT dev2, which was used for training).
 DEFAULT_QUERIES_PATH = PROJECT_ROOT / "notebooks" / "queries" / "topics.ms-marco-dev.tsv"
 DEFAULT_QRELS_PATH = PROJECT_ROOT / "notebooks" / "qrels" / "qrels.ms-marco-dev.tsv"
-DEFAULT_OUTPUT_CSV_PATH = PROJECT_ROOT / "outputs"/ "cql_low_stop_epoch10_dev_50.csv"
 
 TOP_K = 50
 DEFAULT_NUM_QUERIES = 50
@@ -492,6 +485,12 @@ def main() -> None:
         description="Evaluate a trained CQL policy on a query/qrel test set."
     )
     parser.add_argument(
+        "--experiment-dir",
+        type=str,
+        required=True,
+        help="Path to the experiment directory containing experiment.json.",
+    )
+    parser.add_argument(
         "--queries-path",
         type=str,
         default=str(DEFAULT_QUERIES_PATH),
@@ -506,8 +505,8 @@ def main() -> None:
     parser.add_argument(
         "--output-csv",
         type=str,
-        default=str(DEFAULT_OUTPUT_CSV_PATH),
-        help="Path for the output CSV.",
+        default=None,
+        help="Override the output CSV path (default: <experiment-dir>/results.csv).",
     )
     parser.add_argument(
         "--num-queries",
@@ -518,16 +517,35 @@ def main() -> None:
     parser.add_argument(
         "--model",
         type=str,
-        default=str(MODEL_PATH),
-        help="Path to the trained d3rlpy model (.d3 file).",
+        default=None,
+        help="Override the model path from the experiment manifest.",
     )
     args = parser.parse_args()
 
+    experiment_dir = Path(args.experiment_dir).resolve()
+    experiment = require_experiment_dir(experiment_dir)
+    logger.info("Experiment: %s (%s)", experiment.slug, experiment.purpose)
+
+    if args.model:
+        model_path = Path(args.model)
+    else:
+        model_filename = experiment.artifacts.get("model")
+        if not model_filename:
+            raise FileNotFoundError(
+                "No model artifact recorded in the experiment manifest. "
+                "Run src/train_cql.py first or pass --model."
+            )
+        model_path = experiment_dir / model_filename
+
+    output_csv_path = (
+        Path(args.output_csv)
+        if args.output_csv
+        else experiment_dir / "results.csv"
+    )
+
     queries_path = Path(args.queries_path)
     qrels_path = Path(args.qrels_path)
-    output_csv_path = Path(args.output_csv)
     num_queries_to_test = args.num_queries
-    model_path = Path(args.model)
 
     # 1. Verify the required input files exist.
     for path in (model_path, queries_path, qrels_path):
@@ -634,6 +652,8 @@ def main() -> None:
         rows=rows,
         output_csv_path=output_csv_path,
     )
+
+    log_artifact(experiment.slug, "results", output_csv_path.name)
 
     print(
         f"Evaluation completed: {len(rows)} action rows "

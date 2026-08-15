@@ -5,10 +5,11 @@ MAESTRO: Multi-Agent Ensemble for Search Through Reinforcement Optimization
 Offline RL trajectory collection with resumable, per-query checkpoints.
 
 Each successfully generated trajectory is saved as:
-    checkpoints/<run-name>/<query-id-hash>.json
+    <experiment-dir>/checkpoints/<query-id-hash>.json
 
-If the program stops, rerun the same command. Completed query IDs are
-detected from checkpoint files and skipped automatically.
+The experiment directory must contain an ``experiment.json`` manifest before
+this script is invoked. If the program stops, rerun the same command.
+Completed query IDs are detected from checkpoint files and skipped automatically.
 """
 
 import os
@@ -86,6 +87,11 @@ try:
     from .agents.prf import PRFAgent
     from .utils.retriever import Retriever, create_retriever_callable
     from .utils.notifications import send_email
+    from .experiments import (
+        require_experiment_dir,
+        log_artifact,
+        EXPERIMENTS_DIR,
+    )
 
 except ImportError:
     from simulation import Simulation, SimConfig, Transition, ACTION_STOP, ACTION_NAMES
@@ -95,6 +101,11 @@ except ImportError:
     from agents.prf import PRFAgent
     from utils.retriever import Retriever, create_retriever_callable
     from utils.notifications import send_email
+    from experiments import (
+        require_experiment_dir,
+        log_artifact,
+        EXPERIMENTS_DIR,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -199,6 +210,23 @@ def make_run_name(args: argparse.Namespace) -> str:
         f"_prf-{args.top_k_prf}"
         f"_ndcg-{args.ndcg_k}"
         f"_recall-{args.recall_k}"
+    )
+
+
+def resolve_experiment_dir(args: argparse.Namespace) -> Path:
+    """Return the experiment directory from --experiment-dir or deprecated --run-name."""
+    if args.experiment_dir:
+        return Path(args.experiment_dir)
+
+    if args.run_name:
+        logger.warning(
+            "--run-name is deprecated and will be removed. "
+            "Use --experiment-dir instead."
+        )
+        return EXPERIMENTS_DIR / args.run_name
+
+    raise ValueError(
+        "Either --experiment-dir or the deprecated --run-name must be provided."
     )
 
 
@@ -901,6 +929,19 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Starting MAESTRO offline RL trajectory collection")
 
     # -------------------------------------------------------------------------
+    # Step 0: Validate experiment directory
+    # -------------------------------------------------------------------------
+
+    experiment_dir = resolve_experiment_dir(args)
+    if not experiment_dir.is_absolute():
+        experiment_dir = root_path / experiment_dir
+
+    experiment = require_experiment_dir(experiment_dir)
+    logger.info(
+        "Experiment: %s (%s)", experiment.slug, experiment.purpose
+    )
+
+    # -------------------------------------------------------------------------
     # Step 1: Load data
     # -------------------------------------------------------------------------
 
@@ -955,8 +996,7 @@ def main(args: argparse.Namespace) -> None:
     # Step 3: Resume/generate checkpoints
     # -------------------------------------------------------------------------
 
-    run_name = args.run_name or make_run_name(args)
-    checkpoint_dir = root_path / "checkpoints" / run_name
+    checkpoint_dir = experiment_dir / "checkpoints"
 
     generate_trajectories(
         config=config,
@@ -976,16 +1016,20 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info("[Step 4] Rebuilding final outputs from checkpoints")
 
-    output_dir = root_path / "outputs"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    experiment_dir.mkdir(parents=True, exist_ok=True)
 
-    csv_path = output_dir / f"trajectories_{run_name}.csv"
-    h5_path = output_dir / f"mdp_dataset_{run_name}.h5"
+    csv_path = experiment_dir / "trajectories.csv"
+    h5_path = experiment_dir / "dataset.h5"
 
     export_checkpoints_to_csv(checkpoint_dir, csv_path)
 
     mdp_dataset = build_mdp_dataset_from_checkpoints(checkpoint_dir)
     mdp_dataset.dump(str(h5_path))
+
+    # Record produced artifacts in the manifest. The manifest update is
+    # atomic; a crash here leaves the artifacts on disk, just unlisted.
+    log_artifact(experiment.slug, "dataset", "dataset.h5")
+    log_artifact(experiment.slug, "trajectories", "trajectories.csv")
 
     completed_trajectories, total_transitions = count_checkpoint_stats(
         checkpoint_dir
@@ -1089,12 +1133,21 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--experiment-dir",
+        type=str,
+        default=None,
+        help=(
+            "Path to the experiment directory. The directory must already "
+            "contain an experiment.json manifest."
+        ),
+    )
+    parser.add_argument(
         "--run-name",
         type=str,
         default=None,
         help=(
-            "Optional checkpoint/output group name. Use the same value to "
-            "resume exactly the same experiment."
+            "Deprecated. Use --experiment-dir instead; if provided without "
+            "--experiment-dir, the value is treated as a slug under experiments/."
         ),
     )
 
