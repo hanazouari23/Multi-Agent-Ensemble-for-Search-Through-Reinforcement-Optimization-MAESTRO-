@@ -1,0 +1,23 @@
+=== LameR classifier training report ===
+
+Training records: 500
+Train size: 400 (positive 27.5%)
+Test size:  100 (positive 28.0%)
+
+              precision    recall  f1-score   support
+
+  skip_lamer     0.8026    0.8472    0.8243        72
+invoke_lamer     0.5417    0.4643    0.5000        28
+
+    accuracy                         0.7400       100
+   macro avg     0.6721    0.6558    0.6622       100
+weighted avg     0.7296    0.7400    0.7335       100
+
+ROC-AUC: 0.7078
+Average precision: 0.5510
+
+=== Feature importances ===
+  bm25_ndcg: 0.6981
+  bm25_recall: 0.1076
+  bm25_ndcg_is_zero: 0.1016
+  bm25_recall_is_zero: 0.0927

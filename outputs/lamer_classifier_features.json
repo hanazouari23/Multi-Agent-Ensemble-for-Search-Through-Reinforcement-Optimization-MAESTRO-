@@ -1,0 +1,9 @@
+{
+  "features": [
+    "bm25_ndcg",
+    "bm25_recall",
+    "bm25_ndcg_is_zero",
+    "bm25_recall_is_zero"
+  ],
+  "threshold": 0.5
+}
