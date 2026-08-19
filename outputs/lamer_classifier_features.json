@@ -5,5 +5,5 @@
     "bm25_ndcg_is_zero",
     "bm25_recall_is_zero"
   ],
-  "threshold": 0.5
+  "threshold": 0.4
 }

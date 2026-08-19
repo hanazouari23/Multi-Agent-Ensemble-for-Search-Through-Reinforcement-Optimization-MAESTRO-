@@ -3,15 +3,16 @@
 Training records: 500
 Train size: 400 (positive 27.5%)
 Test size:  100 (positive 28.0%)
+Decision threshold: 0.40
 
               precision    recall  f1-score   support
 
-  skip_lamer     0.8026    0.8472    0.8243        72
-invoke_lamer     0.5417    0.4643    0.5000        28
+  skip_lamer     0.8133    0.8472    0.8299        72
+invoke_lamer     0.5600    0.5000    0.5283        28
 
-    accuracy                         0.7400       100
-   macro avg     0.6721    0.6558    0.6622       100
-weighted avg     0.7296    0.7400    0.7335       100
+    accuracy                         0.7500       100
+   macro avg     0.6867    0.6736    0.6791       100
+weighted avg     0.7424    0.7500    0.7455       100
 
 ROC-AUC: 0.7078
 Average precision: 0.5510

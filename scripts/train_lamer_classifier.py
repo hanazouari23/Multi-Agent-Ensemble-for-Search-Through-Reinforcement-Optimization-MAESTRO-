@@ -176,20 +176,51 @@ def main():
         100 * y_test.mean(),
     )
 
-    # A small, constrained random forest is enough for 8 features and ~500 rows.
+    # A small, constrained random forest is enough for a handful of features.
     clf = RandomForestClassifier(
         n_estimators=300,
         max_depth=8,
         min_samples_leaf=2,
         class_weight="balanced",
+        oob_score=True,
         random_state=args.random_state,
         n_jobs=-1,
     )
     clf.fit(X_train, y_train)
 
+    # Pick a decision threshold on out-of-bag training probabilities rather than
+    # using the default 0.5. This usually gives a better precision/recall trade.
+    oob_proba = clf.oob_decision_function_
+    if oob_proba is not None:
+        oob_proba = np.asarray(oob_proba)
+        if oob_proba.ndim == 2:
+            oob_proba = oob_proba[:, 1]
+        # Fill NaNs (samples that were in-bag for every tree) with 0.5.
+        oob_proba = np.nan_to_num(oob_proba, nan=0.5)
+
+        best_threshold = 0.5
+        best_f1 = 0.0
+        for thr in np.arange(0.05, 1.0, 0.05):
+            pred = (oob_proba >= thr).astype(int)
+            tp = ((pred == 1) & (y_train == 1)).sum()
+            fp = ((pred == 1) & (y_train == 0)).sum()
+            fn = ((pred == 0) & (y_train == 1)).sum()
+            if tp + fp == 0 or tp + fn == 0:
+                continue
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            f1 = 2 * precision * recall / (precision + recall)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_threshold = float(thr)
+        decision_threshold = best_threshold
+        logger.info("OOB-optimal decision threshold: %.2f (F1: %.4f)", decision_threshold, best_f1)
+    else:
+        decision_threshold = 0.5
+
     # Evaluation.
-    y_pred = clf.predict(X_test)
     y_proba = clf.predict_proba(X_test)[:, 1]
+    y_pred = (y_proba >= decision_threshold).astype(int)
 
     report = classification_report(
         y_test,
@@ -219,16 +250,17 @@ def main():
     artifact = {
         "model": clf,
         "features": FEATURE_COLUMNS,
-        "threshold": 0.5,
+        "threshold": decision_threshold,
     }
     joblib.dump(artifact, model_path)
     with open(features_path, "w", encoding="utf-8") as f:
-        json.dump({"features": FEATURE_COLUMNS, "threshold": 0.5}, f, indent=2)
+        json.dump({"features": FEATURE_COLUMNS, "threshold": decision_threshold}, f, indent=2)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("=== LameR classifier training report ===\n\n")
         f.write(f"Training records: {len(df)}\n")
         f.write(f"Train size: {len(y_train)} (positive {100*y_train.mean():.1f}%)\n")
-        f.write(f"Test size:  {len(y_test)} (positive {100*y_test.mean():.1f}%)\n\n")
+        f.write(f"Test size:  {len(y_test)} (positive {100*y_test.mean():.1f}%)\n")
+        f.write(f"Decision threshold: {decision_threshold:.2f}\n\n")
         f.write(report)
         f.write("\n")
         f.write(f"ROC-AUC: {roc_auc:.4f}\n")
